@@ -1,0 +1,20 @@
+# Виртуальное окружение
+venv/
+env/
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+
+# Логи и модели (могут быть большими)
+logs/
+models/*.pth
+models/*.npz
+data/*.csv
+
+# Настройки редакторов
+.vscode/
+.idea/
