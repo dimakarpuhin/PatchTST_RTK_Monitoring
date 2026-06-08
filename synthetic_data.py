@@ -303,13 +303,15 @@ class SyntheticDataGenerator:
         
         return np.array(samples)
     
-    def generate_dataset(self, samples_per_class: int = 24) -> Tuple[np.ndarray, np.ndarray]:
+    def generate_dataset(self, samples_per_class: int = None) -> Tuple[np.ndarray, np.ndarray]:
+        if samples_per_class is None:
+            samples_per_class = self.config.SYNTHETIC_SAMPLES_PER_CLASS
         """
-        Генерация полного датасета (для главы 3)
+        Генерация полного датасета 
         samples_per_class: количество образцов на класс (по умолчанию 24 = 120 всего)
         """
         print("=" * 50)
-        print("ГЕНЕРАЦИЯ СИНТЕТИЧЕСКОГО ДАТАСЕТА (ГЛАВА 3)")
+        print("ГЕНЕРАЦИЯ СИНТЕТИЧЕСКОГО ДАТАСЕТА ")
         print("=" * 50)
         print(f"  Образцов на класс: {samples_per_class}")
         print(f"  Всего образцов: {samples_per_class * 5}")
@@ -558,7 +560,7 @@ if __name__ == '__main__':
     print("\n" + "=" * 60)
     print("ТЕСТ 1: ГЕНЕРАЦИЯ НЕБОЛЬШОГО ДАТАСЕТА (ГЛАВА 3)")
     print("=" * 60)
-    X, y = generator.generate_dataset(samples_per_class=24)
+    X, y = generator.generate_dataset()  # теперь использует config.SYNTHETIC_SAMPLES_PER_CLASS
     generator.save_to_csv(X, y, config.DATA_PATH)
     
     # Тест 2: Проверка через Dataset
