@@ -51,7 +51,7 @@ ax2.annotate(f'Best: {best_val_acc:.1f}%',
 
 plt.tight_layout()
 plt.savefig('logs/training_plot.png', dpi=150, bbox_inches='tight')
-plt.savefig('training_plot.png', dpi=150, bbox_inches='tight')
+#plt.savefig('training_plot.png', dpi=150, bbox_inches='tight')
 print("\nГрафики сохранены:")
 print("  - logs/training_plot.png")
 print("  - training_plot.png")
