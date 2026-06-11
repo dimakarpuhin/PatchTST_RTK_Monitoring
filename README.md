@@ -23,7 +23,7 @@
 
 ### Документация API 
 
-!(images/server.png)
+![Swagger API](images/server.png)
 
 *Интерактивная документация FastAPI*
 
