@@ -15,6 +15,7 @@ from datetime import datetime
 from config import Config
 from model import create_model
 from synthetic_data import SyntheticDataGenerator, RTKDataset
+from models_lstm import LSTMModel
 
 
 class ContrastiveLoss(nn.Module):
@@ -475,8 +476,26 @@ def main():
     train_loader, val_loader = prepare_data(Config, samples_per_class=samples_per_class)
     
     # Создание модели
-    model = create_model(Config)
+    #model = create_model(Config) - закомментировал данную строчку перед 3 экспериментом по сравнению LTSM c PatchTST
     
+    # Выбор модели для эксперимента №3
+    MODEL_TYPE = 'patchtst'   # или 'lstm'
+    #MODEL_TYPE = 'lstm'   # или 'patchtst'
+
+    if MODEL_TYPE == 'lstm':
+        from models_lstm import LSTMModel
+        model = LSTMModel(Config)
+        model = model.to(Config.DEVICE)
+        print("\n" + "="*50)
+        print("ОБУЧЕНИЕ LSTM МОДЕЛИ (ДЛЯ СРАВНЕНИЯ)")
+        print("="*50)
+    else:
+        model = create_model(Config)
+        print("\n" + "="*50)
+        print("ОБУЧЕНИЕ МОДИФИЦИРОВАННОЙ МОДЕЛИ PATCHTST")
+        print("="*50)
+
+
     # Создание тренера
     trainer = Trainer(model, Config)
     
