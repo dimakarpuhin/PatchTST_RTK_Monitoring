@@ -44,7 +44,8 @@ class SyntheticDataGenerator:
             'noise_interference': (10, 30)       # SNR в дБ
         }
     
-    def _add_noise(self, signal, channel_idx: int, noise_level: float = 0.03) -> np.ndarray:# увеличил значение шума в данных с 0.02 до 0.03
+    def _add_noise(self, signal, channel_idx: int, noise_level: float = 0.05) -> np.ndarray:# шаг 1 увеличил значение шума в данных с 0.02 до 0.03
+        #шаг 2 увеличил значение шума в данных с 0.03 до 0.04
         """
         Добавление шума к сигналу
         Args:
