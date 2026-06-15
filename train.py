@@ -16,6 +16,7 @@ from config import Config
 from model import create_model
 from synthetic_data import SyntheticDataGenerator, RTKDataset
 from models_lstm import LSTMModel
+from models_gru import GRUModel
 
 
 class ContrastiveLoss(nn.Module):
@@ -480,8 +481,9 @@ def main():
     
     # ========Выбор модели для эксперимента №3=============
     
-    MODEL_TYPE = 'patchtst'   # или 'lstm'
+    #MODEL_TYPE = 'patchtst'   # или 'lstm'
     #MODEL_TYPE = 'lstm'   # или 'patchtst'
+    MODEL_TYPE = 'gru'
 
     if MODEL_TYPE == 'lstm':
         from models_lstm import LSTMModel
@@ -490,7 +492,14 @@ def main():
         print("\n" + "="*50)
         print("ОБУЧЕНИЕ LSTM МОДЕЛИ (ДЛЯ СРАВНЕНИЯ)")
         print("="*50)
-    else:
+    elif MODEL_TYPE == 'gru':
+        from models_gru import GRUModel
+        model = GRUModel(Config)
+        model = model.to(Config.DEVICE)
+        print("\n" + "="*50)
+        print("ОБУЧЕНИЕ GRU МОДЕЛИ (ДЛЯ СРАВНЕНИЯ)")
+        print("="*50)    
+    else: # 'patchtst'
         model = create_model(Config)
         print("\n" + "="*50)
         print("ОБУЧЕНИЕ МОДИФИЦИРОВАННОЙ МОДЕЛИ PATCHTST")
