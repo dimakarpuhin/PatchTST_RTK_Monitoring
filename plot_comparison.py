@@ -58,7 +58,7 @@ ax2.annotate(f'Min: {min_loss_lstm:.4f}',
              fontsize=9, color='#3498db')
 
 plt.tight_layout()
-plt.savefig('comparison_patchtst_vs_lstm.png', dpi=150, bbox_inches='tight')
+#plt.savefig('comparison_patchtst_vs_lstm.png', dpi=150, bbox_inches='tight')
 plt.savefig('logs/comparison_patchtst_vs_lstm.png', dpi=150, bbox_inches='tight')
 plt.show()
 
