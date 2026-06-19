@@ -30,23 +30,18 @@
 
 Структура проекта
 
-config.py Конфигурация модели
-model.py Модифицированный PatchTST
-synthetic_data.py Генератор синтетических данных
-data_loader.py Загрузка и предобработка
-train.py Обучение модели
-server.py FastAPI сервер
-client.py GUI клиент оператора
-admin.py GUI администратора
+config.py - Конфигурация модели
+model.py - Модифицированный PatchTST
+synthetic_data.py - Генератор синтетических данных
+data_loader.py - Загрузка и предобработка
+train.py - Обучение модели
+server.py - FastAPI сервер
+client.py - GUI клиент оператора
+admin.py - GUI администратора
 
-requirements.txt Зависимости
-run_server.bat Запуск сервера (Windows)
-run_client.bat Запуск клиента (Windows)
-run_admin.bat Запуск администратора (Windows)
-run_all.bat Запуск всех компонентов
-run_train.bat Обучение модели
+requirements.txt - Зависимости проекта
 
-README.md Документация
+README.md - Документация
 
 1. Установка зависимостей
 
