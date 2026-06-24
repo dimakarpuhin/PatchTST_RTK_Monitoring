@@ -61,8 +61,10 @@ class SyntheticDataGenerator:
     
     def generate_normal(self, num_samples: int) -> np.ndarray:
         """
-        Генерация нормального режима работы
-        X(t) = X₀(t) + ε(t), где ε(t) ~ N(0, 0.02*X₀)
+        Генерация нормального режима работы с реалистичными эффектами:
+        - Медленный дрейф параметров
+        - Пропуски данных (сбои датчиков)
+        - Импульсные помехи (выбросы)
         """
         samples = []
         for _ in range(num_samples):
@@ -73,23 +75,55 @@ class SyntheticDataGenerator:
             voltage_signal = voltage + 0.05 * voltage * np.sin(2 * np.pi * 50 * t)
             voltage_signal = self._add_noise(voltage_signal, 0, 0.02)
             
+            # ===== УСЛОЖНЕНИЕ: дрейф, пропуски, импульсные помехи =====
+            voltage_signal = self.add_drift(voltage_signal, drift_rate=self.config.DRIFT_RATE)
+            voltage_signal = self.add_dropouts(voltage_signal, dropout_prob=self.config.DROPOUT_PROB)
+            voltage_signal = self.add_impulse_noise(voltage_signal, 
+                                                    impulse_prob=self.config.IMPULSE_PROB, 
+                                                    amplitude=self.config.IMPULSE_AMPLITUDE)
+            # ==========================================================
+            
             # Ток: следует за напряжением с небольшим сдвигом
             current = self.nominal['current'] * (1 + 0.02 * np.random.randn())
             current_signal = current + 0.1 * current * np.sin(2 * np.pi * 50 * t - 0.1)
             current_signal = self._add_noise(current_signal, 1, 0.02)
             
-            # Температура: медленный дрейф + шум
+            # ===== УСЛОЖНЕНИЕ: дрейф, пропуски, импульсные помехи =====
+            current_signal = self.add_drift(current_signal, drift_rate=self.config.DRIFT_RATE)
+            current_signal = self.add_dropouts(current_signal, dropout_prob=self.config.DROPOUT_PROB)
+            current_signal = self.add_impulse_noise(current_signal, 
+                                                    impulse_prob=self.config.IMPULSE_PROB, 
+                                                    amplitude=self.config.IMPULSE_AMPLITUDE)
+            # ==========================================================
+            
+            # Температура: медленный дрейф + шум (температура дрейфует медленнее)
             temperature = self.nominal['temperature'] + 2 * np.random.randn()
             temperature_signal = temperature + 0.5 * np.sin(2 * np.pi * 0.01 * t)
             temperature_signal = self._add_noise(temperature_signal, 2, 0.01)
+            
+            # ===== УСЛОЖНЕНИЕ: дрейф (медленнее), пропуски, импульсные помехи =====
+            temperature_signal = self.add_drift(temperature_signal, drift_rate=self.config.DRIFT_RATE * 0.1)
+            temperature_signal = self.add_dropouts(temperature_signal, dropout_prob=self.config.DROPOUT_PROB)
+            temperature_signal = self.add_impulse_noise(temperature_signal, 
+                                                        impulse_prob=self.config.IMPULSE_PROB, 
+                                                        amplitude=self.config.IMPULSE_AMPLITUDE * 0.5)
+            # ======================================================================
             
             # Уровень помех (низкий в нормальном режиме)
             noise_level = self.nominal['noise'] + 3 * np.random.randn()
             noise_signal = noise_level + np.random.randn(self.window_len) * 0.5
             noise_signal = self._add_noise(noise_signal, 3, 0.05)
             
+            # ===== УСЛОЖНЕНИЕ: дрейф, пропуски, импульсные помехи =====
+            noise_signal = self.add_drift(noise_signal, drift_rate=self.config.DRIFT_RATE)
+            noise_signal = self.add_dropouts(noise_signal, dropout_prob=self.config.DROPOUT_PROB)
+            noise_signal = self.add_impulse_noise(noise_signal, 
+                                                impulse_prob=self.config.IMPULSE_PROB, 
+                                                amplitude=self.config.IMPULSE_AMPLITUDE)
+            # ==========================================================
+            
             sample = np.column_stack([voltage_signal, current_signal, 
-                                       temperature_signal, noise_signal])
+                                    temperature_signal, noise_signal])
             samples.append(sample)
         
         return np.array(samples)
@@ -436,6 +470,46 @@ class SyntheticDataGenerator:
                         X[i, t, c] = 0.0
         
         return X, labels
+    
+    
+    #Эксперимент 5 Усложнение синтетических данных 
+    
+    def add_drift(self, signal, drift_rate=0.0005):
+        """
+        Добавление медленного дрейфа (как в реальных данных)
+        """
+        drift = np.linspace(0, drift_rate * len(signal), len(signal))
+        return signal + signal * drift
+
+    def add_dropouts(self, signal, dropout_prob=0.01):
+        """
+        Добавление пропусков данных (сбои датчиков)
+        """
+        import pandas as pd
+        mask = np.random.rand(len(signal)) > dropout_prob
+        signal = signal.copy()
+        signal[~mask] = np.nan
+
+        # Интерполяция пропусков
+        #signal = pd.Series(signal).interpolate().values - было до эксперимента 5
+        signal = pd.Series(signal).interpolate(method='linear', limit_direction='both').values
+    
+        # Если всё ещё есть nan (на случай, если интерполяция не сработала)
+        signal = np.nan_to_num(signal, nan=np.nanmean(signal))
+        
+        return signal
+
+    def add_impulse_noise(self, signal, impulse_prob=0.005, amplitude=3.0):
+        """
+        Добавление импульсных помех (выбросов)
+        """
+        signal = signal.copy()
+        impulse_mask = np.random.rand(len(signal)) < impulse_prob
+        signal[impulse_mask] += np.random.randn(np.sum(impulse_mask)) * amplitude * np.std(signal)
+        return signal
+
+    
+
 
 
 class RTKDataset(Dataset):
@@ -485,6 +559,16 @@ class RTKDataset(Dataset):
             self.config.AUG_NOISE_STD['temperature'] / 50.0,  # температура
             self.config.AUG_NOISE_STD['noise'] / 35.0         # помехи
         ]'''
+
+        # добавлено при эксперименте 5, после того как в данные были добавлены пропуски
+        """
+        Физически обоснованная аугментация с обработкой пропусков
+        """
+        # Замена nan на среднее значение
+        if torch.isnan(x).any():
+            col_mean = torch.nanmean(x, dim=0)
+            for c in range(self.config.NUM_CHANNELS):
+                x[:, c] = torch.where(torch.isnan(x[:, c]), col_mean[c], x[:, c])
 
         aug_std = [
             self.config.AUG_NOISE_STD[0] / 220.0,

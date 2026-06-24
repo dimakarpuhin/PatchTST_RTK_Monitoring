@@ -481,9 +481,9 @@ def main():
     
     # ========Выбор модели для эксперимента №3=============
     
-    #MODEL_TYPE = 'patchtst'   # или 'lstm'
+    MODEL_TYPE = 'patchtst'   # или 'lstm'
     #MODEL_TYPE = 'lstm'   # или 'patchtst'
-    MODEL_TYPE = 'gru'
+    #MODEL_TYPE = 'gru'
 
     if MODEL_TYPE == 'lstm':
         from models_lstm import LSTMModel
