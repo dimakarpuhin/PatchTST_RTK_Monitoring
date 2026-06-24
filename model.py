@@ -232,17 +232,25 @@ class ModifiedPatchTST(nn.Module):
             num_channels=config.NUM_CHANNELS
         )
         
-        self.adaptive_pos_encoding = AdaptivePositionalEncoding(
-            d_model=config.D_MODEL,
-            max_len=self.num_patches
-        )
+        # ===== Адаптивное позиционное кодирование (формула 2.6) =====
+        if getattr(config, 'USE_ADAPTIVE_ENCODING', True):
+            self.adaptive_pos_encoding = AdaptivePositionalEncoding(
+                d_model=config.D_MODEL,
+                max_len=self.num_patches
+            )
+        else:
+            self.adaptive_pos_encoding = None
         
-        # ИСПРАВЛЕНО: межканальное внимание теперь работает с [batch, num_patches, d_model]
-        self.channel_attention = ChannelAttention(
-            d_model=config.D_MODEL,
-            num_channels=config.NUM_CHANNELS
-        )
-        
+        # ===== Межканальное внимание (формула 2.7) =====
+        if getattr(config, 'USE_CHANNEL_ATTENTION', True):
+            self.channel_attention = ChannelAttention(
+                d_model=config.D_MODEL,
+                num_channels=config.NUM_CHANNELS
+            )
+        else:
+            self.channel_attention = None
+
+         # ===== Маскирование =====
         self.masking = StochasticMasking(
             d_model=config.D_MODEL,
             p_mask=config.MASK_PROB
@@ -281,12 +289,14 @@ class ModifiedPatchTST(nn.Module):
         if use_masking and self.training:
             embeddings, mask = self.masking(embeddings)
         
-        # 3. Адаптивное позиционное кодирование (формула 2.6)
-        embeddings = self.adaptive_pos_encoding(embeddings, patch_variance)
+        # 3. Адаптивное позиционное кодирование (формула 2.6) - ЕСЛИ ВКЛЮЧЕНО (Эксперимент 6)
+        if self.adaptive_pos_encoding is not None:
+            embeddings = self.adaptive_pos_encoding(embeddings, patch_variance)
         
-        # 4. Межканальное внимание (формула 2.7)
-        embeddings = self.channel_attention(embeddings)
-        
+        # 4. Межканальное внимание (формула 2.7) - ЕСЛИ ВКЛЮЧЕНО (Эксперимент 6)
+        if self.channel_attention is not None:
+            embeddings = self.channel_attention(embeddings)
+      
         # 5. Трансформерный кодировщик (формулы 2.3, 2.4)
         for block in self.transformer_blocks:
             embeddings = block(embeddings)

@@ -9,11 +9,20 @@ __pycache__/
 *.so
 .Python
 
-# Логи и модели (могут быть большими)
+# Данные 
+data/
+*.csv
+*.npy
+
+
+# Модели 
+models/
+*.pth
+*.pt
+
+# Логи 
 logs/
-models/*.pth
-models/*.npz
-data/*.csv
+*.log
 
 # Настройки редакторов
 .vscode/

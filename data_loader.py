@@ -439,17 +439,17 @@ class RTKDataset(Dataset):
         Физически обоснованная аугментация (глава 3, раздел 3.2.3)
         Добавление гауссовского шума с дисперсией из таблицы 3.3
         """
-        # Нормировка шума относительно номинальных значений
+        # Исправлено: обращение к AUG_NOISE_STD как к словарю
         aug_std = [
-            self.config.AUG_NOISE_STD['voltage'] / 220.0,
-            self.config.AUG_NOISE_STD['current'] / 10.0,
-            self.config.AUG_NOISE_STD['temperature'] / 50.0,
-            self.config.AUG_NOISE_STD['noise'] / 35.0
+            self.config.AUG_NOISE_STD[0] / 220.0,
+            self.config.AUG_NOISE_STD[1] / 10.0,
+            self.config.AUG_NOISE_STD[2] / 50.0,
+            self.config.AUG_NOISE_STD[3] / 35.0
         ]
         
         noise = torch.randn_like(x)
         for c in range(self.config.NUM_CHANNELS):
-            noise[c] *= aug_std[c]
+            noise[:, c] *= aug_std[c]
         
         return x + noise
 
