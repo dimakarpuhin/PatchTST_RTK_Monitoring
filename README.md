@@ -39,6 +39,15 @@ server.py - FastAPI сервер
 client.py - GUI клиент оператора
 admin.py - GUI администратора
 
+Новые файлы
+parse_real_data.py — парсинг txt файлов КПА
+prepare_real_data.py — подготовка данных с метками
+label_real_data.py — разметка реальных данных
+add_anomalies_to_real.py — добавление синтетических аномалий
+train_real.py — дообучение на реальных данных
+run_ablation.py — Ablation Study
+plot_comparison_data.py — графики сравнения
+
 requirements.txt - Зависимости проекта
 
 README.md - Документация
