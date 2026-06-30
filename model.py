@@ -71,14 +71,14 @@ class ChannelAttention(nn.Module):
         # LayerNorm для стабилизации
         self.norm = nn.LayerNorm(d_model)
         
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
+    '''def forward(self, z: torch.Tensor) -> torch.Tensor:
         """
         Args:
             z: [batch, num_patches, d_model]
         Returns:
             [batch, num_patches, d_model]
         """
-        batch, num_patches, d_model = z.shape
+       batch, num_patches, d_model = z.shape
         residual = z
         
         # Проекция в пространство каналов
@@ -104,8 +104,53 @@ class ChannelAttention(nn.Module):
         # Остаточная связь и нормализация
         out = self.norm(residual + out)
         
-        return out
+        return out'''
 
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        batch, num_patches, d_model = z.shape
+        residual = z
+        
+        # Проекция в пространство каналов
+        channel_features = self.channel_proj(z)
+        
+        # ===== ОЧИСТКА =====
+        if torch.isnan(channel_features).any():
+            print("   ⚠️ nan в channel_features! Заменяем на 0...")
+            channel_features = torch.nan_to_num(channel_features, nan=0.0)
+        # ===================
+        
+        channel_features_t = channel_features.transpose(-2, -1)
+        
+        attention_logits = torch.matmul(channel_features_t, channel_features_t.transpose(-2, -1)) * self.scale
+        
+        # ===== ОЧИСТКА =====
+        if torch.isnan(attention_logits).any():
+            print("   ⚠️ nan в attention_logits! Заменяем на 0...")
+            attention_logits = torch.nan_to_num(attention_logits, nan=0.0)
+        # ===================
+        
+        attention_weights = torch.softmax(attention_logits, dim=-1)
+        
+        # ===== ОЧИСТКА =====
+        if torch.isnan(attention_weights).any():
+            print("   ⚠️ nan в attention_weights! Заменяем на 0...")
+            attention_weights = torch.nan_to_num(attention_weights, nan=0.0)
+        # ===================
+        
+        attended = torch.matmul(attention_weights, channel_features_t)
+        attended = attended.transpose(-2, -1)
+        
+        out = self.out_proj(attended)
+        out = self.norm(residual + out)
+        
+        # ===== ОЧИСТКА =====
+        if torch.isnan(out).any():
+            print("   ⚠️ nan в out! Заменяем на 0...")
+            out = torch.nan_to_num(out, nan=0.0)
+        # ===================
+        
+        return out
 
 class StochasticMasking(nn.Module):
     """
@@ -197,16 +242,105 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout)
         )
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    #def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Формула (2.3): Z = LayerNorm(Z + MultiHeadAttn(Z))
-        attn_out, _ = self.attention(x, x, x)
-        x = self.norm1(x + attn_out)
+        #attn_out, _ = self.attention(x, x, x)
+        #x = self.norm1(x + attn_out)
         
         # Формула (2.4): Z = LayerNorm(Z + FFN(Z))
-        ffn_out = self.ffn(x)
-        x = self.norm2(x + ffn_out)
+        #ffn_out = self.ffn(x)
+        #x = self.norm2(x + ffn_out)
         
-        return x
+        #return x
+    # Эксперимент 8 модификация внимания 
+    '''def forward(self, x, return_attention=False):
+    # Self-attention с возможностью вернуть веса
+        if return_attention:
+            attn_out, attn_weights = self.attention(x, x, x, need_weights=True)
+            x = self.norm1(x + attn_out)
+            ffn_out = self.ffn(x)
+            x = self.norm2(x + ffn_out)
+            return x, attn_weights
+        else:
+            attn_out, _ = self.attention(x, x, x, need_weights=False)
+            x = self.norm1(x + attn_out)
+            ffn_out = self.ffn(x)
+            x = self.norm2(x + ffn_out)
+            return x'''
+
+    def forward(self, x, return_attention=False):
+        if return_attention:
+            attn_out, attn_weights = self.attention(x, x, x, need_weights=True)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(attn_out).any():
+                print("      ⚠️ nan в attn_out! Заменяем на 0...")
+                attn_out = torch.nan_to_num(attn_out, nan=0.0)
+            if attn_weights is not None and torch.isnan(attn_weights).any():
+                print("      ⚠️ nan в attn_weights! Заменяем на 0...")
+                attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
+            # ===================
+            
+            x = self.norm1(x + attn_out)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(x).any():
+                print("      ⚠️ nan после norm1! Заменяем на 0...")
+                x = torch.nan_to_num(x, nan=0.0)
+            # ===================
+            
+            ffn_out = self.ffn(x)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(ffn_out).any():
+                print("      ⚠️ nan в ffn_out! Заменяем на 0...")
+                ffn_out = torch.nan_to_num(ffn_out, nan=0.0)
+            # ===================
+            
+            x = self.norm2(x + ffn_out)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(x).any():
+                print("      ⚠️ nan после norm2! Заменяем на 0...")
+                x = torch.nan_to_num(x, nan=0.0)
+            # ===================
+            
+            return x, attn_weights
+        else:
+            attn_out, _ = self.attention(x, x, x, need_weights=False)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(attn_out).any():
+                print("      ⚠️ nan в attn_out! Заменяем на 0...")
+                attn_out = torch.nan_to_num(attn_out, nan=0.0)
+            # ===================
+            
+            x = self.norm1(x + attn_out)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(x).any():
+                print("      ⚠️ nan после norm1! Заменяем на 0...")
+                x = torch.nan_to_num(x, nan=0.0)
+            # ===================
+            
+            ffn_out = self.ffn(x)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(ffn_out).any():
+                print("      ⚠️ nan в ffn_out! Заменяем на 0...")
+                ffn_out = torch.nan_to_num(ffn_out, nan=0.0)
+            # ===================
+            
+            x = self.norm2(x + ffn_out)
+            
+            # ===== ОЧИСТКА =====
+            if torch.isnan(x).any():
+                print("      ⚠️ nan после norm2! Заменяем на 0...")
+                x = torch.nan_to_num(x, nan=0.0)
+            # ===================
+            
+            return x
+    
 
 
 class ModifiedPatchTST(nn.Module):
@@ -316,6 +450,195 @@ class ModifiedPatchTST(nn.Module):
             probabilities = torch.softmax(logits, dim=-1)
             predictions = torch.argmax(probabilities, dim=-1)
         return predictions, probabilities
+
+    # Эксперимент 8 модификация внимания 
+    def get_attention(self, x):
+        """
+        Безопасное извлечение весов внимания с полной диагностикой.
+        """
+        self.eval()
+        with torch.no_grad():
+            print("\n🔍 ДИАГНОСТИКА get_attention:")
+            
+            # 1. Патчинг
+            patches, embeddings, patch_variance = self.patch_encoder(x)
+
+            # ===== ОЧИСТКА =====
+            if torch.isnan(embeddings).any():
+                print("   ⚠️ nan в embeddings после патчинга! Заменяем на 0...")
+                embeddings = torch.nan_to_num(embeddings, nan=0.0)
+                patch_variance = torch.nan_to_num(patch_variance, nan=0.0)
+
+            # Проверка внутри патчинга
+            print(f"   После патчинга: patches shape={patches.shape}, nan={torch.isnan(patches).any().item()}")
+            print(f"   После патчинга: embeddings shape={embeddings.shape}, nan={torch.isnan(embeddings).any().item()}")
+            print(f"   После патчинга: patch_variance shape={patch_variance.shape}, nan={torch.isnan(patch_variance).any().item()}")
+
+            
+            
+            # 2. Адаптивное кодирование
+            if self.adaptive_pos_encoding is not None:
+                embeddings = self.adaptive_pos_encoding(embeddings, patch_variance)
+                if torch.isnan(embeddings).any():
+                    print("   ⚠️ nan в embeddings после adaptive_pos_encoding! Заменяем на 0...")
+                    embeddings = torch.nan_to_num(embeddings, nan=0.0)
+            
+            # 3. Межканальное внимание
+            if self.channel_attention is not None:
+                embeddings = self.channel_attention(embeddings)
+                print(f"   После channel_attention: nan={torch.isnan(embeddings).any().item()}")
+                if torch.isnan(embeddings).any():
+                    print("   ⚠️ nan в embeddings после channel_attention!")
+                    embeddings = torch.nan_to_num(embeddings, nan=0.0)
+            
+            # 4. Проход по всем блокам
+            for i, block in enumerate(self.transformer_blocks):
+                embeddings = block(embeddings)
+                print(f"   После блока {i}: nan={torch.isnan(embeddings).any().item()}")
+                if torch.isnan(embeddings).any():
+                    print(f"   ⚠️ nan в embeddings после блока {i}!")
+                    embeddings = torch.nan_to_num(embeddings, nan=0.0)
+            
+            # 5. Классификация
+            pooled = embeddings.mean(dim=1)
+            pooled = self.final_norm(pooled)
+
+            # ===== ОЧИСТКА =====
+            if torch.isnan(pooled).any():
+                print("   ⚠️ nan в pooled после final_norm! Заменяем на 0...")
+                pooled = torch.nan_to_num(pooled, nan=0.0)
+            # ===================
+
+
+            logits = self.classifier(pooled)
+
+            # ===== ОЧИСТКА =====
+            if torch.isnan(logits).any():
+                print("   ⚠️ nan в logits! Заменяем на 0...")
+                logits = torch.nan_to_num(logits, nan=0.0)
+            # ===================
+
+            print(f"   После классификации: nan={torch.isnan(logits).any().item()}")
+            
+            # 6. Внимание — берём из последнего блока
+            last_block = self.transformer_blocks[-1]
+            attn_out, attn_weights = last_block.attention(
+                embeddings, embeddings, embeddings,
+                need_weights=True
+            )
+            # ===== ФИНАЛЬНАЯ ОЧИСТКА =====
+            if attn_weights is not None:
+                # Принудительно заменяем nan на 0
+                attn_weights = torch.nan_to_num(attn_weights, nan=0.0)
+                # Если все веса равны 0, создаём равномерное распределение
+                if torch.all(attn_weights == 0):
+                    print("   ⚠️ Все веса равны 0. Создаём равномерное распределение...")
+                    num_patches = attn_weights.shape[-1]
+                    attn_weights = torch.ones_like(attn_weights) / num_patches
+                # Нормализуем, чтобы сумма по строкам была = 1
+                attn_weights = attn_weights / attn_weights.sum(dim=-1, keepdim=True)
+            # ===============================
+
+            if attn_weights is not None:
+                print(f"   После очистки: attn_weights min={attn_weights.min().item():.6f}, max={attn_weights.max().item():.6f}")
+            
+            print("🔍 ДИАГНОСТИКА ЗАВЕРШЕНА\n")
+            
+            return logits, attn_weights
+        
+    # Эксперимент 8
+    def register_attention_hook(self):
+        """
+        Регистрирует forward hook для извлечения весов внимания
+        """
+        self.attention_weights = []
+        
+        def hook(module, input, output):
+            # output[1] — это веса внимания (если need_weights=True)
+            if isinstance(output, tuple) and len(output) > 1:
+                self.attention_weights.append(output[1])
+        
+        # Регистрируем хук на последнем блоке
+        for block in self.transformer_blocks:
+            if hasattr(block, 'attention'):
+                block.attention.register_forward_hook(hook)
+
+    # Эксперимент 8
+    def get_attention_with_hook(self, x):
+        """
+        Извлечение сырых весов внимания до softmax (через forward hook)
+        """
+        self.eval()
+        
+        # Контейнер для весов
+        attention_weights = []
+        
+        def hook(module, input, output):
+            # Вход в MultiheadAttention — это (query, key, value)
+            # Мы можем вычислить внимание вручную из query и key
+            q, k, v = input[0], input[1], input[2]
+            
+            # Вычисляем внимание вручную
+            # Сначала вычисляем Q @ K^T
+            q = q.transpose(0, 1)  # [seq_len, batch, dim]
+            k = k.transpose(0, 1)
+            
+            # Масштабирование
+            scale = 1.0 / (q.size(-1) ** 0.5)
+            attn_logits = torch.matmul(q, k.transpose(-2, -1)) * scale
+            
+            # Softmax
+            attn_weights = torch.softmax(attn_logits, dim=-1)
+            attention_weights.append(attn_weights.detach().cpu())
+        
+        # Вешаем хук на последний блок
+        last_block = self.transformer_blocks[-1]
+        
+        # Сохраняем оригинальный forward
+        original_forward = last_block.attention.forward
+        
+        def wrapped_forward(query, key, value, need_weights=False, **kwargs):
+            # Вызываем оригинальный forward
+            output, attn_weights = original_forward(query, key, value, need_weights=True, **kwargs)
+            # Сохраняем веса
+            attention_weights.append(attn_weights.detach().cpu() if attn_weights is not None else None)
+            return output, attn_weights
+        
+        # Подменяем forward
+        last_block.attention.forward = wrapped_forward
+        
+        with torch.no_grad():
+            # Патчинг
+            _, embeddings, patch_variance = self.patch_encoder(x)
+            
+            if self.adaptive_pos_encoding is not None:
+                embeddings = self.adaptive_pos_encoding(embeddings, patch_variance)
+            
+            if self.channel_attention is not None:
+                embeddings = self.channel_attention(embeddings)
+            
+            # Проход по блокам
+            for i, block in enumerate(self.transformer_blocks):
+                if i == len(self.transformer_blocks) - 1:
+                    embeddings, _ = block(embeddings, return_attention=True)
+                else:
+                    embeddings = block(embeddings)
+            
+            # Классификация
+            pooled = embeddings.mean(dim=1)
+            pooled = self.final_norm(pooled)
+            logits = self.classifier(pooled)
+        
+        # Восстанавливаем оригинальный forward
+        last_block.attention.forward = original_forward
+        
+        if attention_weights and attention_weights[-1] is not None:
+            attn_weights = attention_weights[-1]
+            print(f"📊 Веса получены через hook: {attn_weights.shape}")
+            return logits, attn_weights
+        else:
+            print("⚠️ Hook не сработал")
+            return logits, None
 
 
 # Функция для создания модели
