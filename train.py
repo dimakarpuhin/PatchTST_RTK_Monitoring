@@ -17,6 +17,8 @@ from model import create_model
 from synthetic_data import SyntheticDataGenerator, RTKDataset
 from models_lstm import LSTMModel
 from models_gru import GRUModel
+from models_tcn import TCNModel
+from models_transformer import TransformerModel
 
 
 class ContrastiveLoss(nn.Module):
@@ -484,6 +486,8 @@ def main():
     MODEL_TYPE = 'patchtst'   # или 'lstm'
     #MODEL_TYPE = 'lstm'   # или 'patchtst'
     #MODEL_TYPE = 'gru'
+    #MODEL_TYPE = 'transformer'
+    #MODEL_TYPE = 'tcn'
 
     if MODEL_TYPE == 'lstm':
         from models_lstm import LSTMModel
@@ -498,6 +502,16 @@ def main():
         model = model.to(Config.DEVICE)
         print("\n" + "="*50)
         print("ОБУЧЕНИЕ GRU МОДЕЛИ (ДЛЯ СРАВНЕНИЯ)")
+        print("="*50)
+    elif MODEL_TYPE == 'tcn':
+        model = TCNModel(Config).to(Config.DEVICE)
+        print("\n" + "="*50)
+        print("ОБУЧЕНИЕ TCN МОДЕЛИ (ДЛЯ СРАВНЕНИЯ)")
+        print("="*50)
+    elif MODEL_TYPE == 'transformer':
+        model = TransformerModel(Config).to(Config.DEVICE)
+        print("\n" + "="*50)
+        print("ОБУЧЕНИЕ TRANSFORMER МОДЕЛИ (ДЛЯ СРАВНЕНИЯ)")
         print("="*50)    
     else: # 'patchtst'
         model = create_model(Config)
