@@ -109,18 +109,43 @@ class SyntheticDataGenerator:
                                                         amplitude=self.config.IMPULSE_AMPLITUDE * 0.5)
             # ======================================================================
             
+
+            # ===== ДОБАВЛЯЕМ ПЕРЕКРЫТИЕ: случайный дрейф температуры ===== Эксперимент 10
+            # С вероятностью 20% добавляем дрейф, похожий на перегрев
+            if np.random.rand() < 0.2:
+                drift_start = np.random.randint(0, self.window_len // 3)
+                drift_end = np.random.randint(2 * self.window_len // 3, self.window_len)
+                drift_rate = np.random.uniform(0.001, 0.005)
+                temperature_signal[drift_start:drift_end] += drift_rate * np.arange(drift_end - drift_start)
+            # ============================================================
+
             # Уровень помех (низкий в нормальном режиме)
             noise_level = self.nominal['noise'] + 3 * np.random.randn()
             noise_signal = noise_level + np.random.randn(self.window_len) * 0.5
             noise_signal = self._add_noise(noise_signal, 3, 0.05)
             
-            # ===== УСЛОЖНЕНИЕ: дрейф, пропуски, импульсные помехи =====
-            noise_signal = self.add_drift(noise_signal, drift_rate=self.config.DRIFT_RATE)
-            noise_signal = self.add_dropouts(noise_signal, dropout_prob=self.config.DROPOUT_PROB)
-            noise_signal = self.add_impulse_noise(noise_signal, 
-                                                impulse_prob=self.config.IMPULSE_PROB, 
-                                                amplitude=self.config.IMPULSE_AMPLITUDE)
-            # ==========================================================
+           
+            # ===== СЛУЧАЙНАЯ АУГМЕНТАЦИЯ =====
+            # Выбираем 2-3 случайных метода из списка
+            aug_methods = [
+                ('scale', lambda s: self.augment_scale(s, (0.85, 1.15))),
+                ('shift', lambda s: self.augment_shift(s, max_shift=15)),
+                ('freq', lambda s: self.augment_frequency_modulation(s, (0.92, 1.08))),
+                ('drift', lambda s: self.augment_drift(s, drift_rate=0.0005)),
+                ('dropout', lambda s: self.augment_dropout(s, dropout_prob=0.02)),
+            ]
+
+            # Случайно выбираем 2-3 метода
+            num_augs = np.random.randint(2, 4)
+            selected = np.random.choice(len(aug_methods), num_augs, replace=False)
+
+            for idx in selected:
+                name, func = aug_methods[idx]
+                voltage_signal = func(voltage_signal)
+                current_signal = func(current_signal)
+                temperature_signal = func(temperature_signal)
+                noise_signal = func(noise_signal)
+            # ===================================
             
             sample = np.column_stack([voltage_signal, current_signal, 
                                     temperature_signal, noise_signal])
@@ -153,13 +178,33 @@ class SyntheticDataGenerator:
             
             # Добавление шума
             voltage_signal = self._add_noise(voltage_signal, 0, 0.02)
-            
+
+                # ===== ДОБАВЛЯЕМ ПЕРЕКРЫТИЕ: импульсные помехи в скачке ===== Эксперимент 10
+            # С вероятностью 30% добавляем высокочастотные выбросы
+            if np.random.rand() < 0.3:
+                num_spikes = np.random.randint(3, 10)
+                for _ in range(num_spikes):
+                    spike_pos = np.random.randint(0, self.window_len)
+                    spike_amplitude = np.random.uniform(0.05, 0.15) * voltage
+                    spike_width = np.random.randint(1, 3)
+                    start = max(0, spike_pos - spike_width)
+                    end = min(self.window_len, spike_pos + spike_width)
+                    voltage_signal[start:end] += spike_amplitude
+            # ============================================================
+          
             # Ток следует за напряжением
             current = self.nominal['current'] * (1 + 0.02 * np.random.randn())
             current_signal = current + 0.1 * current * np.sin(2 * np.pi * 50 * t - 0.1)
             current_signal[surge_start:surge_end] *= (1 + surge_amplitude * 0.8)
             current_signal = self._add_noise(current_signal, 1, 0.02)
-            
+
+            # ===== ДОБАВЛЯЕМ ПЕРЕКРЫТИЕ: рост тока при скачке =====
+            # С вероятностью 30% ток тоже растёт (как при перегрузке)
+            if np.random.rand() < 0.3 and 'surge_start' in locals():
+                current_overload = np.random.uniform(0.1, 0.3)
+                current_signal[surge_start:surge_end] *= (1 + current_overload)
+            # ======================================================
+           
             # Температура (норма)
             temperature = self.nominal['temperature'] + 2 * np.random.randn()
             temperature_signal = temperature + 0.5 * np.sin(2 * np.pi * 0.01 * t)
@@ -177,6 +222,24 @@ class SyntheticDataGenerator:
         
         return np.array(samples)
     
+
+    def generate_noisy_normal(self, num_samples: int) -> np.ndarray:
+        """Генерация нормального режима с высоким уровнем шума (помехи)"""
+        samples = []
+        for _ in range(num_samples):
+            # Берём нормальный сигнал
+            normal = self.generate_normal(1)[0]
+            
+            # Добавляем сильный шум (как при помехах)
+            noise_level = np.random.uniform(0.1, 0.3)
+            noise = np.random.randn(self.window_len, self.num_channels) * noise_level * np.std(normal, axis=0)
+            
+            sample = normal + noise
+            samples.append(sample)
+        
+        return np.array(samples)
+
+
     def generate_current_overload(self, num_samples: int) -> np.ndarray:
         """
         Генерация токовой перегрузки (глава 3, раздел 3.2.3)
@@ -507,6 +570,46 @@ class SyntheticDataGenerator:
         impulse_mask = np.random.rand(len(signal)) < impulse_prob
         signal[impulse_mask] += np.random.randn(np.sum(impulse_mask)) * amplitude * np.std(signal)
         return signal
+    
+
+    #Эксперимент 5 Усложнение синтетических данных при помощи метода аугментации
+
+    def augment_scale(self, signal, scale_range=(0.8, 1.2)):
+        """Масштабирование амплитуды (имитация изменения уровня сигнала)"""
+        scale = np.random.uniform(*scale_range)
+        return signal * scale
+
+    def augment_shift(self, signal, max_shift=20):
+        """Сдвиг по времени (имитация фазовых рассогласований)"""
+        shift = np.random.randint(-max_shift, max_shift)
+        if shift > 0:
+            return np.concatenate([np.zeros(shift), signal[:-shift]])
+        else:
+            return np.concatenate([signal[-shift:], np.zeros(-shift)])
+
+    def augment_frequency_modulation(self, signal, mod_range=(0.9, 1.1)):
+        """Частотная модуляция (растяжение/сжатие по времени)"""
+        t = np.arange(len(signal))
+        freq_mod = np.random.uniform(*mod_range)
+        new_t = t * freq_mod
+        return np.interp(t, new_t, signal)
+
+    def augment_dropout(self, signal, dropout_prob=0.02):
+        """Пропуски данных (имитация сбоя датчика)"""
+        mask = np.random.rand(len(signal)) > dropout_prob
+        signal = signal.copy()
+        signal[~mask] = 0
+        return signal
+
+    def augment_drift(self, signal, drift_rate=0.001):
+        """Медленный дрейф (имитация нагрева/охлаждения)"""
+        drift = np.linspace(0, drift_rate * len(signal), len(signal))
+        return signal + signal * drift
+
+    def augment_mixup(self, signal1, signal2, alpha=0.2):
+        """Mixup: линейная комбинация двух сигналов (улучшает обобщение)"""
+        lam = np.random.beta(alpha, alpha)
+        return lam * signal1 + (1 - lam) * signal2
 
     
 
