@@ -383,6 +383,22 @@ def prepare_data(config, samples_per_class=24):
     generator = SyntheticDataGenerator(config)
     X, y = generator.generate_dataset(samples_per_class=samples_per_class)
     
+
+    #Эксперимент 11 
+    print("\n🔍 ПРОВЕРКА МЕТОК:")
+    print(f"  Уникальные метки: {np.unique(y)}")
+    print(f"  Распределение:")
+    for cls in range(Config.NUM_CLASSES):
+        count = np.sum(y == cls)
+        print(f"    Класс {cls}: {count} образцов ({count/len(y)*100:.1f}%)")
+
+
+    print(f"\n🔍 ПРОВЕРКА ДАННЫХ:")
+    print(f"  X содержит NaN: {np.isnan(X).any()}")
+    print(f"  X содержит Inf: {np.isinf(X).any()}")
+    print(f"  X.min(): {X.min():.4f}, X.max(): {X.max():.4f}, X.mean(): {X.mean():.4f}")    
+
+
     # Разделение на обучающую и валидационную выборки (80% / 20%)
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=0.2, stratify=y, random_state=config.RANDOM_SEED
