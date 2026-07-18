@@ -1,6 +1,5 @@
 # synthetic_data.py
-# Генератор синтетических данных для обучения и тестирования
-# Основан на методике из главы 3 (разделы 3.1, 3.2.3)
+# Генератор синтетических данных, максимально приближенных к реальным
 
 import numpy as np
 import pandas as pd
@@ -9,627 +8,399 @@ from torch.utils.data import Dataset, DataLoader
 from config import Config
 import os
 from typing import Tuple, Optional
-
+from scipy import signal
+import warnings
+warnings.filterwarnings('ignore')
 
 class SyntheticDataGenerator:
     """
     Генератор синтетических данных, имитирующих работу РТК
-    Классы неопределённостей (в соответствии с главой 3):
-    0 - Норма
-    1 - Скачок напряжения
-    2 - Токовая перегрузка
-    3 - Перегрев
-    4 - Электропомеха
+    С реалистичными перекрытиями классов, шумами и корреляциями
     """
     
     def __init__(self, config):
         self.config = config
         self.window_len = config.WINDOW_LENGTH
         self.num_channels = config.NUM_CHANNELS
-        self.fs = 1000  # Частота дискретизации 1000 Гц (согласно главе 3)
+        self.fs = 1000
         
-        # Номинальные значения параметров (нормальный режим)
+        # ===== РЕАЛИСТИЧНЫЕ НОМИНАЛЬНЫЕ ЗНАЧЕНИЯ =====
         self.nominal = {
-            'voltage': 220.0,      # В
-            'current': 10.0,       # А
-            'temperature': 50.0,   # °C
-            'noise': 35.0          # дБ
+            'voltage': 220.0,
+            'current': 10.0,
+            'temperature': 50.0,
+            'noise': 35.0
         }
         
-        # Диапазоны для аномалий (таблица 3.1 из главы 3)
-        self.anomaly_ranges = {
-            'voltage_surge': (0.85, 1.15),      # ±15% от номинала (187-253 В)
-            'current_overload': (1.0, 2.0),      # до 200% номинала (10-20 А)
-            'temperature_overheat': (20, 80),    # °C
-            'noise_interference': (10, 30)       # SNR в дБ
-        }
-    
-    def _add_noise(self, signal, channel_idx: int, noise_level: float = 0.05) -> np.ndarray:# шаг 1 увеличил значение шума в данных с 0.02 до 0.03
-        #шаг 2 увеличил значение шума в данных с 0.03 до 0.04
-        """
-        Добавление шума к сигналу
-        Args:
-            signal: исходный сигнал
-            channel_idx: индекс канала (0-напряжение, 1-ток, 2-температура, 3-помехи)
-            noise_level: уровень шума (относительно амплитуды сигнала)
-        """
-        # Разный уровень шума для разных каналов
-        channel_noise_levels = [0.02, 0.02, 0.01, 0.05]  # [напряжение, ток, температура, помехи]
-        actual_noise = noise_level * channel_noise_levels[channel_idx]
-        noise = np.random.randn(len(signal)) * np.std(signal) * actual_noise
-        return signal + noise
-    
-    def generate_normal(self, num_samples: int) -> np.ndarray:
-        """
-        Генерация нормального режима работы с реалистичными эффектами:
-        - Медленный дрейф параметров
-        - Пропуски данных (сбои датчиков)
-        - Импульсные помехи (выбросы)
-        """
-        samples = []
-        for _ in range(num_samples):
-            t = np.arange(self.window_len) / self.fs
-            
-            # Напряжение: синусоида 50 Гц с шумом
-            voltage = self.nominal['voltage'] * (1 + 0.02 * np.random.randn())
-            voltage_signal = voltage + 0.05 * voltage * np.sin(2 * np.pi * 50 * t)
-            voltage_signal = self._add_noise(voltage_signal, 0, 0.02)
-            
-            # ===== УСЛОЖНЕНИЕ: дрейф, пропуски, импульсные помехи =====
-            voltage_signal = self.add_drift(voltage_signal, drift_rate=self.config.DRIFT_RATE)
-            voltage_signal = self.add_dropouts(voltage_signal, dropout_prob=self.config.DROPOUT_PROB)
-            voltage_signal = self.add_impulse_noise(voltage_signal, 
-                                                    impulse_prob=self.config.IMPULSE_PROB, 
-                                                    amplitude=self.config.IMPULSE_AMPLITUDE)
-            # ==========================================================
-            
-            # Ток: следует за напряжением с небольшим сдвигом
-            current = self.nominal['current'] * (1 + 0.02 * np.random.randn())
-            current_signal = current + 0.1 * current * np.sin(2 * np.pi * 50 * t - 0.1)
-            current_signal = self._add_noise(current_signal, 1, 0.02)
-            
-            # ===== УСЛОЖНЕНИЕ: дрейф, пропуски, импульсные помехи =====
-            current_signal = self.add_drift(current_signal, drift_rate=self.config.DRIFT_RATE)
-            current_signal = self.add_dropouts(current_signal, dropout_prob=self.config.DROPOUT_PROB)
-            current_signal = self.add_impulse_noise(current_signal, 
-                                                    impulse_prob=self.config.IMPULSE_PROB, 
-                                                    amplitude=self.config.IMPULSE_AMPLITUDE)
-            # ==========================================================
-            
-            # Температура: медленный дрейф + шум (температура дрейфует медленнее)
-            temperature = self.nominal['temperature'] + 2 * np.random.randn()
-            temperature_signal = temperature + 0.5 * np.sin(2 * np.pi * 0.01 * t)
-            temperature_signal = self._add_noise(temperature_signal, 2, 0.01)
-            
-            # ===== УСЛОЖНЕНИЕ: дрейф (медленнее), пропуски, импульсные помехи =====
-            temperature_signal = self.add_drift(temperature_signal, drift_rate=self.config.DRIFT_RATE * 0.1)
-            temperature_signal = self.add_dropouts(temperature_signal, dropout_prob=self.config.DROPOUT_PROB)
-            temperature_signal = self.add_impulse_noise(temperature_signal, 
-                                                        impulse_prob=self.config.IMPULSE_PROB, 
-                                                        amplitude=self.config.IMPULSE_AMPLITUDE * 0.5)
-            # ======================================================================
-            
-
-            # ===== ДОБАВЛЯЕМ ПЕРЕКРЫТИЕ: случайный дрейф температуры ===== Эксперимент 10
-            # С вероятностью 20% добавляем дрейф, похожий на перегрев
-            if np.random.rand() < 0.2:
-                drift_start = np.random.randint(0, self.window_len // 3)
-                drift_end = np.random.randint(2 * self.window_len // 3, self.window_len)
-                drift_rate = np.random.uniform(0.001, 0.005)
-                temperature_signal[drift_start:drift_end] += drift_rate * np.arange(drift_end - drift_start)
-            # ============================================================
-
-            # Уровень помех (низкий в нормальном режиме)
-            noise_level = self.nominal['noise'] + 3 * np.random.randn()
-            noise_signal = noise_level + np.random.randn(self.window_len) * 0.5
-            noise_signal = self._add_noise(noise_signal, 3, 0.05)
-            
-           
-            # ===== СЛУЧАЙНАЯ АУГМЕНТАЦИЯ =====
-            # Выбираем 2-3 случайных метода из списка
-            aug_methods = [
-                ('scale', lambda s: self.augment_scale(s, (0.85, 1.15))),
-                ('shift', lambda s: self.augment_shift(s, max_shift=15)),
-                ('freq', lambda s: self.augment_frequency_modulation(s, (0.92, 1.08))),
-                ('drift', lambda s: self.augment_drift(s, drift_rate=0.0005)),
-                ('dropout', lambda s: self.augment_dropout(s, dropout_prob=0.02)),
-            ]
-
-            # Случайно выбираем 2-3 метода
-            num_augs = np.random.randint(2, 4)
-            selected = np.random.choice(len(aug_methods), num_augs, replace=False)
-
-            for idx in selected:
-                name, func = aug_methods[idx]
-                voltage_signal = func(voltage_signal)
-                current_signal = func(current_signal)
-                temperature_signal = func(temperature_signal)
-                noise_signal = func(noise_signal)
-            # ===================================
-            
-            sample = np.column_stack([voltage_signal, current_signal, 
-                                    temperature_signal, noise_signal])
-            samples.append(sample)
-        
-        return np.array(samples)
-    
-    def generate_voltage_surge(self, num_samples: int) -> np.ndarray:
-        """
-        Генерация скачка напряжения (глава 3, раздел 3.2.3)
-        U(t) = U₀·(1 + A·I(t∈[t₀, t₀+Δt])), A ∈ [0.1, 0.15]
-        Диапазон: 187-253 В (соответствует ±15% от 220 В)
-        """
-        samples = []
-        for _ in range(num_samples):
-            t = np.arange(self.window_len) / self.fs
-            
-            # Нормальный режим
-            voltage = self.nominal['voltage'] * (1 + 0.02 * np.random.randn())
-            voltage_signal = voltage + 0.05 * voltage * np.sin(2 * np.pi * 50 * t)
-            
-            # Внезапный скачок напряжения
-            surge_start = np.random.randint(int(0.3 * self.window_len), 
-                                           int(0.7 * self.window_len))
-            surge_duration = np.random.randint(50, 200)
-            surge_amplitude = np.random.uniform(0.1, 0.15)  # 10-15% (диапазон 242-253 В)
-            
-            surge_end = min(surge_start + surge_duration, self.window_len)
-            voltage_signal[surge_start:surge_end] *= (1 + surge_amplitude)
-            
-            # Добавление шума
-            voltage_signal = self._add_noise(voltage_signal, 0, 0.02)
-
-                # ===== ДОБАВЛЯЕМ ПЕРЕКРЫТИЕ: импульсные помехи в скачке ===== Эксперимент 10
-            # С вероятностью 30% добавляем высокочастотные выбросы
-            if np.random.rand() < 0.3:
-                num_spikes = np.random.randint(3, 10)
-                for _ in range(num_spikes):
-                    spike_pos = np.random.randint(0, self.window_len)
-                    spike_amplitude = np.random.uniform(0.05, 0.15) * voltage
-                    spike_width = np.random.randint(1, 3)
-                    start = max(0, spike_pos - spike_width)
-                    end = min(self.window_len, spike_pos + spike_width)
-                    voltage_signal[start:end] += spike_amplitude
-            # ============================================================
-          
-            # Ток следует за напряжением
-            current = self.nominal['current'] * (1 + 0.02 * np.random.randn())
-            current_signal = current + 0.1 * current * np.sin(2 * np.pi * 50 * t - 0.1)
-            current_signal[surge_start:surge_end] *= (1 + surge_amplitude * 0.8)
-            current_signal = self._add_noise(current_signal, 1, 0.02)
-
-            # ===== ДОБАВЛЯЕМ ПЕРЕКРЫТИЕ: рост тока при скачке =====
-            # С вероятностью 30% ток тоже растёт (как при перегрузке)
-            if np.random.rand() < 0.3 and 'surge_start' in locals():
-                current_overload = np.random.uniform(0.1, 0.3)
-                current_signal[surge_start:surge_end] *= (1 + current_overload)
-            # ======================================================
-           
-            # Температура (норма)
-            temperature = self.nominal['temperature'] + 2 * np.random.randn()
-            temperature_signal = temperature + 0.5 * np.sin(2 * np.pi * 0.01 * t)
-            temperature_signal = self._add_noise(temperature_signal, 2, 0.01)
-            
-            # Уровень помех (незначительно растёт при скачке)
-            noise_level = self.nominal['noise'] + 5 * np.random.randn()
-            noise_signal = noise_level + np.random.randn(self.window_len) * 0.5
-            noise_signal[self.window_len//3:2*self.window_len//3] += 2
-            noise_signal = self._add_noise(noise_signal, 3, 0.05)
-            
-            sample = np.column_stack([voltage_signal, current_signal,
-                                       temperature_signal, noise_signal])
-            samples.append(sample)
-        
-        return np.array(samples)
-    
-
-    def generate_noisy_normal(self, num_samples: int) -> np.ndarray:
-        """Генерация нормального режима с высоким уровнем шума (помехи)"""
-        samples = []
-        for _ in range(num_samples):
-            # Берём нормальный сигнал
-            normal = self.generate_normal(1)[0]
-            
-            # Добавляем сильный шум (как при помехах)
-            noise_level = np.random.uniform(0.1, 0.3)
-            noise = np.random.randn(self.window_len, self.num_channels) * noise_level * np.std(normal, axis=0)
-            
-            sample = normal + noise
-            samples.append(sample)
-        
-        return np.array(samples)
-
-
-    def generate_current_overload(self, num_samples: int) -> np.ndarray:
-        """
-        Генерация токовой перегрузки (глава 3, раздел 3.2.3)
-        Ток: до 200% номинала (10-20 А)
-        """
-        samples = []
-        for _ in range(num_samples):
-            t = np.arange(self.window_len) / self.fs
-            
-            # Напряжение (норма)
-            voltage = self.nominal['voltage'] * (1 + 0.02 * np.random.randn())
-            voltage_signal = voltage + 0.05 * voltage * np.sin(2 * np.pi * 50 * t)
-            voltage_signal = self._add_noise(voltage_signal, 0, 0.02)
-            
-            # Ток с перегрузкой
-            current = self.nominal['current'] * (1 + 0.02 * np.random.randn())
-            current_signal = current + 0.1 * current * np.sin(2 * np.pi * 50 * t - 0.1)
-            
-            # Внезапная перегрузка
-            overload_start = np.random.randint(int(0.2 * self.window_len),
-                                              int(0.8 * self.window_len))
-            overload_duration = np.random.randint(100, 300)
-            overload_factor = np.random.uniform(1.5, 2.0)  # 150-200% номинала
-            
-            overload_end = min(overload_start + overload_duration, self.window_len)
-            current_signal[overload_start:overload_end] *= overload_factor
-            
-            current_signal = self._add_noise(current_signal, 1, 0.03)
-            
-            # ИСПРАВЛЕНО: температура растёт медленно (0.1°C/с, как в диссертации)
-            temperature = self.nominal['temperature']
-            # При fs=1000 Гц, dt = 0.001 с, дрейф = 0.1°C/с → 0.0001°C/отсчёт
-            drift_rate = 0.0001 * (overload_factor - 1)
-            temperature_signal = temperature + drift_rate * np.arange(self.window_len)
-            temperature_signal += 1 * np.random.randn(self.window_len)
-            temperature_signal = self._add_noise(temperature_signal, 2, 0.01)
-            
-            # Уровень помех
-            noise_level = self.nominal['noise'] + 5 * np.random.randn()
-            noise_signal = noise_level + np.random.randn(self.window_len) * 0.5
-            noise_signal = self._add_noise(noise_signal, 3, 0.05)
-            
-            sample = np.column_stack([voltage_signal, current_signal,
-                                       temperature_signal, noise_signal])
-            samples.append(sample)
-        
-        return np.array(samples)
-    
-    def generate_overheat(self, num_samples: int) -> np.ndarray:
-        """
-        Генерация перегрева (температурный дрейф)
-        Температура: 20-80°C (линейный дрейф)
-        """
-        samples = []
-        for _ in range(num_samples):
-            t = np.arange(self.window_len) / self.fs
-            
-            # Напряжение (норма)
-            voltage = self.nominal['voltage'] * (1 + 0.02 * np.random.randn())
-            voltage_signal = voltage + 0.05 * voltage * np.sin(2 * np.pi * 50 * t)
-            voltage_signal = self._add_noise(voltage_signal, 0, 0.02)
-            
-            # Ток (норма)
-            current = self.nominal['current'] * (1 + 0.02 * np.random.randn())
-            current_signal = current + 0.1 * current * np.sin(2 * np.pi * 50 * t - 0.1)
-            current_signal = self._add_noise(current_signal, 1, 0.02)
-            
-            # Температура: линейный дрейф вверх (согласно диссертации)
-            start_temp = np.random.uniform(20, 40)
-            end_temp = np.random.uniform(60, 80)
-            temperature_signal = np.linspace(start_temp, end_temp, self.window_len)
-            temperature_signal += 0.5 * np.random.randn(self.window_len)
-            temperature_signal = self._add_noise(temperature_signal, 2, 0.01)
-            
-            # Уровень помех (незначительно растёт при нагреве)
-            noise_level = self.nominal['noise'] + 8 * np.random.randn()
-            noise_signal = noise_level + np.random.randn(self.window_len) * 0.5
-            # Шум растёт с температурой
-            temp_norm = (temperature_signal - 20) / 60
-            noise_signal += 5 * temp_norm
-            noise_signal = self._add_noise(noise_signal, 3, 0.05)
-            
-            sample = np.column_stack([voltage_signal, current_signal,
-                                       temperature_signal, noise_signal])
-            samples.append(sample)
-        
-        return np.array(samples)
-    
-    def generate_electromagnetic_interference(self, num_samples: int) -> np.ndarray:
-        """
-        Генерация электромагнитных помех (глава 3, раздел 3.2.3)
-        SNR: 10-30 дБ (сильные помехи)
-        Импульсные выбросы длительностью 1-5 отсчётов
-        """
-        samples = []
-        for _ in range(num_samples):
-            t = np.arange(self.window_len) / self.fs
-            
-            # Напряжение (норма с помехами)
-            voltage = self.nominal['voltage'] * (1 + 0.02 * np.random.randn())
-            voltage_signal = voltage + 0.05 * voltage * np.sin(2 * np.pi * 50 * t)
-            
-            # Добавление высокочастотных импульсных помех (1-5 отсчётов)
-            num_spikes = np.random.randint(5, 20)
-            for _ in range(num_spikes):
-                spike_pos = np.random.randint(0, self.window_len)
-                spike_amplitude = np.random.uniform(0.1, 0.3) * voltage
-                spike_width = np.random.randint(1, 5)
-                start = max(0, spike_pos - spike_width)
-                end = min(self.window_len, spike_pos + spike_width)
-                voltage_signal[start:end] += spike_amplitude
-            
-            voltage_signal = self._add_noise(voltage_signal, 0, 0.05)
-            
-            # Ток (аналогично)
-            current = self.nominal['current'] * (1 + 0.02 * np.random.randn())
-            current_signal = current + 0.1 * current * np.sin(2 * np.pi * 50 * t - 0.1)
-            
-            num_spikes_current = np.random.randint(3, 10)
-            for _ in range(num_spikes_current):
-                spike_pos = np.random.randint(0, self.window_len)
-                spike_amplitude = np.random.uniform(0.1, 0.25) * current
-                spike_width = np.random.randint(1, 3)
-                start = max(0, spike_pos - spike_width)
-                end = min(self.window_len, spike_pos + spike_width)
-                current_signal[start:end] += spike_amplitude
-            
-            current_signal = self._add_noise(current_signal, 1, 0.05)
-            
-            # Температура (норма)
-            temperature = self.nominal['temperature'] + 2 * np.random.randn()
-            temperature_signal = temperature + 0.5 * np.sin(2 * np.pi * 0.01 * t)
-            temperature_signal = self._add_noise(temperature_signal, 2, 0.01)
-            
-            # ИСПРАВЛЕНО: уровень помех (шум в дБ с заданным SNR)
-            snr_db = np.random.uniform(10, 30)  # диапазон из диссертации (10-30 дБ)
-            base_noise_level = self.nominal['noise']
-            
-            # Базовый шум
-            noise_signal = base_noise_level + np.random.randn(self.window_len) * 3
-            
-            # Добавление импульсных выбросов в уровень помех
-            num_spikes_noise = np.random.randint(3, 10)
-            for _ in range(num_spikes_noise):
-                spike_pos = np.random.randint(0, self.window_len)
-                spike_amplitude = np.random.uniform(5, 15)  # дБ
-                spike_width = np.random.randint(1, 3)
-                start = max(0, spike_pos - spike_width)
-                end = min(self.window_len, spike_pos + spike_width)
-                noise_signal[start:end] += spike_amplitude
-            
-            # Ограничение уровня помех (не более 60 дБ)
-            noise_signal = np.clip(noise_signal, 15, 60)
-            noise_signal = self._add_noise(noise_signal, 3, 0.05)
-            
-            sample = np.column_stack([voltage_signal, current_signal,
-                                       temperature_signal, noise_signal])
-            samples.append(sample)
-        
-        return np.array(samples)
-    
-    def generate_dataset(self, samples_per_class: int = None) -> Tuple[np.ndarray, np.ndarray]:
-        if samples_per_class is None:
-            samples_per_class = self.config.SYNTHETIC_SAMPLES_PER_CLASS
-        """
-        Генерация полного датасета 
-        samples_per_class: количество образцов на класс (по умолчанию 24 = 120 всего)
-        """
-        print("=" * 50)
-        print("ГЕНЕРАЦИЯ СИНТЕТИЧЕСКОГО ДАТАСЕТА ")
-        print("=" * 50)
-        print(f"  Образцов на класс: {samples_per_class}")
-        print(f"  Всего образцов: {samples_per_class * 5}")
-        print(f"  Длина окна T: {self.window_len}")
-        print(f"  Число параметров d: {self.num_channels}")
-        
-        # Генерация данных для каждого класса
-        print("  Генерация нормального режима...")
-        data_normal = self.generate_normal(samples_per_class)
-        print("  Генерация скачков напряжения...")
-        data_voltage = self.generate_voltage_surge(samples_per_class)
-        print("  Генерация токовых перегрузок...")
-        data_current = self.generate_current_overload(samples_per_class)
-        print("  Генерация перегревов...")
-        data_temp = self.generate_overheat(samples_per_class)
-        print("  Генерация электромагнитных помех...")
-        data_noise = self.generate_electromagnetic_interference(samples_per_class)
-        
-        # Объединение
-        X = np.vstack([data_normal, data_voltage, data_current, data_temp, data_noise])
-        y = np.hstack([
-            np.zeros(samples_per_class),   # норма
-            np.ones(samples_per_class),    # скачок напряжения
-            2 * np.ones(samples_per_class), # токовая перегрузка
-            3 * np.ones(samples_per_class), # перегрев
-            4 * np.ones(samples_per_class)  # электропомеха
+        # ===== РЕАЛЬНАЯ МАТРИЦА КОРРЕЛЯЦИИ =====
+        # Напряжение-Ток: 0.6 (при росте напряжения растёт ток)
+        # Напряжение-Температура: 0.3 (слабая связь)
+        # Ток-Температура: 0.5 (рост тока → нагрев)
+        # Помехи влияют на всё
+        self.correlation_matrix = np.array([
+            [1.0,  0.6,  0.3,  0.2],   # U
+            [0.6,  1.0,  0.5,  0.3],   # I
+            [0.3,  0.5,  1.0,  0.4],   # T
+            [0.2,  0.3,  0.4,  1.0]    # Noise
         ])
         
-        # Перемешивание
-        indices = np.random.permutation(len(X))
-        X = X[indices]
-        y = y[indices]
+        # ===== РЕАЛИСТИЧНЫЕ ШУМЫ =====
+        self.noise_levels = {
+            'voltage': 0.03,   # 3% шума
+            'current': 0.04,   # 4% шума
+            'temperature': 0.02, # 2% шума
+            'noise': 0.10      # 10% шума
+        }
         
-        print(f"  Готово: X.shape = {X.shape}, y.shape = {y.shape}")
-        print("=" * 50)
-        
-        return X, y.astype(np.int64)
+        # ===== РЕАЛИСТИЧНЫЕ ДРЕЙФЫ =====
+        self.drift_rates = {
+            'voltage': 0.0001,
+            'current': 0.0002,
+            'temperature': 0.0005,
+            'noise': 0.0003
+        }
     
-    def generate_large_dataset(self, samples_per_class: int = 2000) -> Tuple[np.ndarray, np.ndarray]:
+    def _apply_correlations(self, data):
         """
-        Генерация большого синтетического датасета (для главы 2)
-        samples_per_class: количество образцов на класс (по умолчанию 2000 = 10 000 всего)
+        Применение корреляций между каналами
+        Использует разложение Холецкого
         """
-        print("=" * 50)
-        print("ГЕНЕРАЦИЯ БОЛЬШОГО СИНТЕТИЧЕСКОГО ДАТАСЕТА (ГЛАВА 2)")
-        print("=" * 50)
-        print(f"  Образцов на класс: {samples_per_class}")
-        print(f"  Всего образцов: {samples_per_class * 5}")
-        print(f"  Длина окна T: {self.window_len}")
-        print(f"  Число параметров d: {self.num_channels}")
+        num_samples = data.shape[0]
+        original_shape = data.shape
         
-        X, y = self.generate_dataset(samples_per_class=samples_per_class)
+        # Применяем корреляции к каждому образцу
+        for i in range(num_samples):
+            # Разложение Холецкого
+            L = np.linalg.cholesky(self.correlation_matrix)
+            
+            # Транспонируем данные для умножения
+            sample = data[i].T  # [channels, window_len]
+            
+            # Применяем корреляцию
+            correlated = np.dot(L, sample)
+            
+            data[i] = correlated.T
         
-        print(f"  Готово: X.shape = {X.shape}, y.shape = {y.shape}")
-        print("=" * 50)
+        return data
+    
+    def _add_realistic_noise(self, signal, channel_idx):
+        """Добавление реалистичного цветного шума"""
+        noise_type = np.random.choice(['white', 'pink', 'brown'], p=[0.5, 0.3, 0.2])
+        
+        if noise_type == 'white':
+            noise = np.random.randn(len(signal))
+        elif noise_type == 'pink':
+            # Розовый шум (1/f)
+            from scipy.signal import lfilter
+            b = np.array([1.0])
+            a = np.array([1.0, -0.9])
+            noise = lfilter(b, a, np.random.randn(len(signal)))
+        else:
+            # Коричневый шум (1/f²)
+            noise = np.cumsum(np.random.randn(len(signal)))
+            noise = noise / noise.std()
+        
+        level = list(self.noise_levels.values())[channel_idx]
+        return signal + noise * np.std(signal) * level
+    
+    def _generate_sample_with_correlations(self, base_samples, labels):
+        """
+        Генерация образца с учётом корреляций
+        """
+        # Объединяем все каналы
+        X = np.vstack(base_samples)
+        y = np.hstack(labels)
+        
+        # Перемешиваем
+        idx = np.random.permutation(len(X))
+        X = X[idx]
+        y = y[idx]
+        
+        # Применяем корреляции
+        X = self._apply_correlations(X)
         
         return X, y
-    
-    def save_to_csv(self, X: np.ndarray, y: np.ndarray, filepath: str) -> pd.DataFrame:
-        """
-        Сохранение датасета в CSV файл
-        Формат: столбцы label, t0_ch0, t0_ch1, ..., tT_chM
-        """
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        
-        # Создание DataFrame
-        num_samples, window_len, num_channels = X.shape
-        
-        # Разворачиваем временные ряды в плоскую таблицу
-        data = []
-        for i in range(num_samples):
-            row = {'label': int(y[i])}
-            for t in range(window_len):
-                for c in range(num_channels):
-                    row[f't{t}_ch{c}'] = X[i, t, c]
-            data.append(row)
-        
-        df = pd.DataFrame(data)
-        df.to_csv(filepath, index=False)
-        print(f"Датасет сохранён в {filepath}")
-        print(f"  Формат: {df.shape[0]} строк, {df.shape[1]} столбцов")
-        return df
-    
-    def load_from_csv(self, filepath: str) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Загрузка датасета из CSV файла
-        """
-        df = pd.read_csv(filepath)
-        
-        labels = df['label'].values
-        
-        # Определение размерности из данных
-        # Ищем столбцы формата t0_ch0
-        max_t = 0
-        max_ch = 0
-        for col in df.columns:
-            if col.startswith('t'):
-                parts = col.split('_')
-                if len(parts) == 2:
-                    t = int(parts[0][1:])
-                    ch = int(parts[1][2:])
-                    max_t = max(max_t, t)
-                    max_ch = max(max_ch, ch)
-        
-        window_len = max_t + 1
-        num_channels = max_ch + 1
-        
-        print(f"Загрузка данных из {filepath}")
-        print(f"  Окно: {window_len} отсчётов, {num_channels} каналов")
-        
-        X = np.zeros((len(df), window_len, num_channels))
-        
-        for i in range(len(df)):
-            for t in range(window_len):
-                for c in range(num_channels):
-                    col_name = f't{t}_ch{c}'
-                    if col_name in df.columns:
-                        X[i, t, c] = df.loc[i, col_name]
-                    else:
-                        # Если столбца нет, заполняем нулями
-                        X[i, t, c] = 0.0
-        
-        return X, labels
-    
-    
-    #Эксперимент 5 Усложнение синтетических данных 
-    
-    def add_drift(self, signal, drift_rate=0.0005):
-        """
-        Добавление медленного дрейфа (как в реальных данных)
-        """
-        drift = np.linspace(0, drift_rate * len(signal), len(signal))
-        return signal + signal * drift
 
-    def add_dropouts(self, signal, dropout_prob=0.01):
-        """
-        Добавление пропусков данных (сбои датчиков)
-        """
-        import pandas as pd
-        mask = np.random.rand(len(signal)) > dropout_prob
-        signal = signal.copy()
-        signal[~mask] = np.nan
-
-        # Интерполяция пропусков
-        #signal = pd.Series(signal).interpolate().values - было до эксперимента 5
-        signal = pd.Series(signal).interpolate(method='linear', limit_direction='both').values
-    
-        # Если всё ещё есть nan (на случай, если интерполяция не сработала)
-        signal = np.nan_to_num(signal, nan=np.nanmean(signal))
+    def generate_normal(self, num_samples: int) -> np.ndarray:
+        """Генерация нормального режима с вариациями"""
+        samples = []
+        for _ in range(num_samples):
+            t = np.arange(self.window_len) / self.fs
+            
+            # ===== НАПРЯЖЕНИЕ =====
+            voltage = self.nominal['voltage'] * (1 + np.random.normal(0, 0.02))
+            # Добавляем 50 Гц + гармоники
+            voltage_signal = voltage * (1 + 0.05 * np.sin(2 * np.pi * 50 * t))
+            voltage_signal += 0.02 * voltage * np.sin(2 * np.pi * 100 * t + 0.5)
+            voltage_signal = self._add_realistic_noise(voltage_signal, 0)
+            # Медленные флуктуации
+            voltage_signal *= (1 + 0.01 * np.sin(2 * np.pi * 0.01 * t))
+            
+            # ===== ТОК =====
+            current = self.nominal['current'] * (1 + np.random.normal(0, 0.02))
+            current_signal = current * (1 + 0.1 * np.sin(2 * np.pi * 50 * t - 0.1))
+            current_signal += 0.03 * current * np.sin(2 * np.pi * 100 * t + 0.3)
+            current_signal = self._add_realistic_noise(current_signal, 1)
+            
+            # ===== ТЕМПЕРАТУРА =====
+            temp = self.nominal['temperature'] + np.random.normal(0, 2)
+            temp_signal = temp + 0.5 * np.sin(2 * np.pi * 0.005 * t)
+            temp_signal = self._add_realistic_noise(temp_signal, 2)
+            
+            # ===== ПОМЕХИ =====
+            noise = self.nominal['noise'] + np.random.normal(0, 3)
+            noise_signal = noise + np.random.randn(self.window_len) * 0.5
+            noise_signal = self._add_realistic_noise(noise_signal, 3)
+            
+            sample = np.column_stack([voltage_signal, current_signal, 
+                                      temp_signal, noise_signal])
+            samples.append(sample)
         
-        return signal
+        return np.array(samples)
 
-    def add_impulse_noise(self, signal, impulse_prob=0.005, amplitude=3.0):
+    def generate_voltage_surge(self, num_samples: int) -> np.ndarray:
+        """Генерация скачка напряжения с реалистичными эффектами"""
+        samples = []
+        for _ in range(num_samples):
+            # Начинаем с нормального сигнала
+            base = self.generate_normal(1)[0]
+            
+            # Выбираем случайный участок для скачка (от 20% до 80% окна)
+            start = np.random.randint(int(0.2 * self.window_len), 
+                                     int(0.6 * self.window_len))
+            duration = np.random.randint(50, 150)
+            end = min(start + duration, self.window_len)
+            
+            # Разная амплитуда скачка
+            surge_amplitude = np.random.uniform(0.08, 0.18)
+            
+            # Плавный скачок (не мгновенный!)
+            ramp = np.ones(self.window_len)
+            ramp[start:end] = 1 + surge_amplitude * np.linspace(0, 1, end-start)
+            
+            base[:, 0] *= ramp
+            base[:, 1] *= (1 + surge_amplitude * 0.6 * np.random.uniform(0.5, 1.0))
+            
+            samples.append(base)
+        
+        return np.array(samples)
+
+    def generate_current_overload(self, num_samples: int) -> np.ndarray:
+        """Генерация токовой перегрузки с нагревом"""
+        samples = []
+        for _ in range(num_samples):
+            base = self.generate_normal(1)[0]
+            
+            start = np.random.randint(int(0.2 * self.window_len), 
+                                     int(0.7 * self.window_len))
+            duration = np.random.randint(100, 250)
+            end = min(start + duration, self.window_len)
+            
+            overload = np.random.uniform(1.4, 2.0)
+            base[start:end, 1] *= overload
+            
+            # Нагрев от перегрузки (реалистичная связь!)
+            heating = (overload - 1.0) * 20 * np.linspace(0, 1, end-start)
+            base[start:end, 2] += heating
+            
+            # Падение напряжения при перегрузке
+            base[start:end, 0] *= (1 - (overload - 1.0) * 0.05)
+            
+            samples.append(base)
+        
+        return np.array(samples)
+
+    def generate_overheat(self, num_samples: int) -> np.ndarray:
+        """Генерация перегрева с ростом тока"""
+        samples = []
+        for _ in range(num_samples):
+            base = self.generate_normal(1)[0]
+            
+            start = np.random.randint(50, 100)
+            end = self.window_len - np.random.randint(50, 100)
+            
+            # Линейный рост температуры
+            temp_start = np.random.uniform(20, 40)
+            temp_end = np.random.uniform(60, 80)
+            base[start:end, 2] = np.linspace(temp_start, temp_end, end-start)
+            
+            # Сопротивление растёт с температурой → ток падает
+            temp_norm = (base[start:end, 2] - 20) / 60
+            base[start:end, 1] *= (1 - 0.2 * temp_norm)
+            
+            # Напряжение немного падает
+            base[start:end, 0] *= (1 - 0.05 * temp_norm)
+            
+            samples.append(base)
+        
+        return np.array(samples)
+
+    def generate_electromagnetic_interference(self, num_samples: int) -> np.ndarray:
+        """Генерация электромагнитных помех"""
+        samples = []
+        for _ in range(num_samples):
+            base = self.generate_normal(1)[0]
+            
+            # Количество импульсных помех
+            num_spikes = np.random.randint(5, 25)
+            
+            for _ in range(num_spikes):
+                pos = np.random.randint(0, self.window_len)
+                amplitude = np.random.uniform(0.1, 0.35)
+                width = np.random.randint(1, 5)
+                
+                start = max(0, pos - width)
+                end = min(self.window_len, pos + width)
+                
+                # Помехи влияют на ВСЕ каналы!
+                base[start:end, :] += amplitude * np.random.randn(end-start, 4) * np.std(base[start:end, :], axis=0)
+            
+            # Добавляем высокочастотную модуляцию
+            freq = np.random.uniform(100, 500)
+            modulation = 0.1 * np.sin(2 * np.pi * freq * np.arange(self.window_len) / self.fs)
+            base[:, :] *= (1 + modulation[:, np.newaxis])
+            
+            samples.append(base)
+        
+        return np.array(samples)
+
+    def generate_mixed_sample(self, main_type: int, second_type: int) -> np.ndarray:
         """
-        Добавление импульсных помех (выбросов)
+        Генерация смешанного образца (перекрытие классов)
         """
-        signal = signal.copy()
-        impulse_mask = np.random.rand(len(signal)) < impulse_prob
-        signal[impulse_mask] += np.random.randn(np.sum(impulse_mask)) * amplitude * np.std(signal)
-        return signal
-    
-
-    #Эксперимент 5 Усложнение синтетических данных при помощи метода аугментации
-
-    def augment_scale(self, signal, scale_range=(0.8, 1.2)):
-        """Масштабирование амплитуды (имитация изменения уровня сигнала)"""
-        scale = np.random.uniform(*scale_range)
-        return signal * scale
-
-    def augment_shift(self, signal, max_shift=20):
-        """Сдвиг по времени (имитация фазовых рассогласований)"""
-        shift = np.random.randint(-max_shift, max_shift)
-        if shift > 0:
-            return np.concatenate([np.zeros(shift), signal[:-shift]])
+        # Генерация основного класса
+        if main_type == 0:
+            main = self.generate_normal(1)[0]
+        elif main_type == 1:
+            main = self.generate_voltage_surge(1)[0]
+        elif main_type == 2:
+            main = self.generate_current_overload(1)[0]
+        elif main_type == 3:
+            main = self.generate_overheat(1)[0]
         else:
-            return np.concatenate([signal[-shift:], np.zeros(-shift)])
+            main = self.generate_electromagnetic_interference(1)[0]
+        
+        # Генерация второго класса
+        if second_type == 0:
+            second = self.generate_normal(1)[0]
+        elif second_type == 1:
+            second = self.generate_voltage_surge(1)[0]
+        elif second_type == 2:
+            second = self.generate_current_overload(1)[0]
+        elif second_type == 3:
+            second = self.generate_overheat(1)[0]
+        else:
+            second = self.generate_electromagnetic_interference(1)[0]
+        
+        # Смешивание с разными весами
+        weight = np.random.uniform(0.3, 0.7)
+        mixed = weight * main + (1 - weight) * second
+        
+        return mixed
 
-    def augment_frequency_modulation(self, signal, mod_range=(0.9, 1.1)):
-        """Частотная модуляция (растяжение/сжатие по времени)"""
-        t = np.arange(len(signal))
-        freq_mod = np.random.uniform(*mod_range)
-        new_t = t * freq_mod
-        return np.interp(t, new_t, signal)
+    def generate_dataset(self, samples_per_class: int = None) -> Tuple[np.ndarray, np.ndarray]:
+        """Генерация полного датасета с перекрытием классов"""
+        if samples_per_class is None:
+            samples_per_class = self.config.SYNTHETIC_SAMPLES_PER_CLASS
+        
+        print("=" * 60)
+        print("ГЕНЕРАЦИЯ РЕАЛИСТИЧНЫХ СИНТЕТИЧЕСКИХ ДАННЫХ")
+        print("=" * 60)
+        print(f"  Образцов на класс: {samples_per_class}")
+        
+        all_samples = []
+        all_labels = []
+        
+        # Для каждого класса
+        for cls in range(5):
+            # Основные образцы
+            if cls == 0:
+                main_samples = self.generate_normal(samples_per_class)
+            elif cls == 1:
+                main_samples = self.generate_voltage_surge(samples_per_class)
+            elif cls == 2:
+                main_samples = self.generate_current_overload(samples_per_class)
+            elif cls == 3:
+                main_samples = self.generate_overheat(samples_per_class)
+            else:
+                main_samples = self.generate_electromagnetic_interference(samples_per_class)
+            
+            all_samples.append(main_samples)
+            all_labels.append(np.full(samples_per_class, cls))
+            
+            # ===== ПЕРЕКРЫТИЕ КЛАССОВ (50% от основного количества) =====
+            overlap_count = max(1, samples_per_class // 2)
+            
+            # Смешиваем с соседними классами
+            for other_cls in range(5):
+                if other_cls == cls:
+                    continue
+                if np.random.rand() < 0.3:  # 30% вероятность смешивания
+                    mixed_samples = []
+                    for _ in range(overlap_count):
+                        mixed = self.generate_mixed_sample(cls, other_cls)
+                        mixed_samples.append(mixed)
+                    
+                    mixed_samples = np.array(mixed_samples)
+                    all_samples.append(mixed_samples)
+                    
+                    # Метка: с вероятностью 50% - основной класс, 50% - второй
+                    labels = np.where(np.random.rand(overlap_count) < 0.5, cls, other_cls)
+                    all_labels.append(labels)
+        
+        # Объединение
+        X = np.vstack(all_samples)
+        y = np.hstack(all_labels)
+        
+        # Перемешивание
+        idx = np.random.permutation(len(X))
+        X = X[idx]
+        y = y[idx]
+        
+        # Применяем корреляции ко всему датасету
+        X = self._apply_correlations(X)
+        
+        print(f"  Готово: X.shape = {X.shape}, y.shape = {y.shape}")
+        print(f"  Распределение меток:")
+        for cls in range(5):
+            count = np.sum(y == cls)
+            print(f"    Класс {cls}: {count} ({count/len(y)*100:.1f}%)")
+        print("=" * 60)
+        
+        return X, y.astype(np.int64)
 
-    def augment_dropout(self, signal, dropout_prob=0.02):
-        """Пропуски данных (имитация сбоя датчика)"""
-        mask = np.random.rand(len(signal)) > dropout_prob
-        signal = signal.copy()
-        signal[~mask] = 0
-        return signal
-
-    def augment_drift(self, signal, drift_rate=0.001):
-        """Медленный дрейф (имитация нагрева/охлаждения)"""
-        drift = np.linspace(0, drift_rate * len(signal), len(signal))
-        return signal + signal * drift
-
-    def augment_mixup(self, signal1, signal2, alpha=0.2):
-        """Mixup: линейная комбинация двух сигналов (улучшает обобщение)"""
-        lam = np.random.beta(alpha, alpha)
-        return lam * signal1 + (1 - lam) * signal2
-
-    
+    def add_real_noise_from_file(self, X, noise_file):
+        """Добавление реального шума из файла"""
+        if not os.path.exists(noise_file):
+            print(f"Файл шума {noise_file} не найден")
+            return X
+        
+        noise_data = np.load(noise_file)
+        noise_idx = np.random.randint(0, len(noise_data) - self.window_len)
+        noise = noise_data[noise_idx:noise_idx + self.window_len]
+        
+        # Нормализуем шум к уровню сигнала
+        noise_scale = np.std(X, axis=(0, 1)) / np.std(noise, axis=0)
+        noise = noise * noise_scale[np.newaxis, :]
+        
+        return X + noise * 0.3  # 30% шума от уровня сигнала
 
 
+
+# ... весь твой код SyntheticDataGenerator ...
+
+# ============================================================
+# RTKDataset - для совместимости с train.py
+# ============================================================
 
 class RTKDataset(Dataset):
     """PyTorch Dataset для загрузки данных"""
     
     def __init__(self, X: np.ndarray, y: np.ndarray, config, augment: bool = False):
-        """
-        Args:
-            X: [num_samples, window_len, num_channels] - входные данные
-            y: [num_samples] - метки классов
-            config: объект конфигурации
-            augment: применять ли аугментацию (True для обучения)
-        """
         self.X = torch.FloatTensor(X)
         self.y = torch.LongTensor(y)
         self.config = config
-        self.augment = augment  # флаг аугментации
+        self.augment = augment
         
     def __len__(self) -> int:
         return len(self.X)
@@ -638,76 +409,33 @@ class RTKDataset(Dataset):
         x = self.X[idx]
         y = self.y[idx]
         
-        # ИСПРАВЛЕНО: убрано self.training (у датасета нет этого атрибута)
         if self.augment:
             x = self.apply_augmentation(x)
         
         return x, y
     
     def apply_augmentation(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Физически обоснованная аугментация (глава 3, раздел 3.2.3)
-        Добавление гауссовского шума с дисперсией из таблицы 3.3
-        
-        В соответствии с главой 3:
-        - Напряжение: σ = 11.0 В (5% от 220 В)
-        - Ток: σ = 0.67 А (6.7% от 10 А)
-        - Температура: σ = 2.0 °C (погрешность датчика)
-        - Помехи: σ = 5.0 дБ (вариация ЭМО)
-        """
-        # Нормировка шума относительно номинальных значений
-        '''aug_std = [
-            self.config.AUG_NOISE_STD['voltage'] / 220.0,     # напряжение
-            self.config.AUG_NOISE_STD['current'] / 10.0,      # ток
-            self.config.AUG_NOISE_STD['temperature'] / 50.0,  # температура
-            self.config.AUG_NOISE_STD['noise'] / 35.0         # помехи
-        ]'''
-
-        # добавлено при эксперименте 5, после того как в данные были добавлены пропуски
-        """
-        Физически обоснованная аугментация с обработкой пропусков
-        """
-        # Замена nan на среднее значение
         if torch.isnan(x).any():
             col_mean = torch.nanmean(x, dim=0)
             for c in range(self.config.NUM_CHANNELS):
                 x[:, c] = torch.where(torch.isnan(x[:, c]), col_mean[c], x[:, c])
-
-        aug_std = [
-            self.config.AUG_NOISE_STD[0] / 220.0,
-            self.config.AUG_NOISE_STD[1] / 10.0,
-            self.config.AUG_NOISE_STD[2] / 50.0,
-            self.config.AUG_NOISE_STD[3] / 35.0
-        ]
         
+        aug_std = [0.03, 0.04, 0.02, 0.10]
         noise = torch.randn_like(x)
         for c in range(self.config.NUM_CHANNELS):
-            noise[:, c] *= aug_std[c]
+            noise[:, c] *= aug_std[c] * torch.std(x[:, c])
         
         return x + noise
 
 
-def create_dataloaders(config, X: np.ndarray, y: np.ndarray, 
-                       train_ratio: float = 0.7, 
-                       val_ratio: float = 0.15,
-                       batch_size: Optional[int] = None) -> Tuple[DataLoader, DataLoader, DataLoader]:
-    """
-    Создание DataLoader для обучения, валидации и тестирования
-    
-    Args:
-        config: объект конфигурации
-        X: входные данные
-        y: метки
-        train_ratio: доля обучающей выборки
-        val_ratio: доля валидационной выборки
-        batch_size: размер батча (если None, используется config.BATCH_SIZE)
-    """
+def create_dataloaders_from_arrays(X, y, config, train_ratio=0.7, val_ratio=0.15, batch_size=None):
+    """Создание DataLoader из массивов numpy"""
     from sklearn.model_selection import train_test_split
+    from torch.utils.data import DataLoader
     
     if batch_size is None:
         batch_size = config.BATCH_SIZE
     
-    # Разделение на train/val/test
     X_train, X_temp, y_train, y_temp = train_test_split(
         X, y, test_size=(1 - train_ratio), stratify=y, random_state=config.RANDOM_SEED
     )
@@ -718,71 +446,42 @@ def create_dataloaders(config, X: np.ndarray, y: np.ndarray,
         stratify=y_temp, random_state=config.RANDOM_SEED
     )
     
-    print(f"Разделение данных:")
-    print(f"  Обучающая выборка: {len(X_train)} образцов")
-    print(f"  Валидационная: {len(X_val)} образцов")
-    print(f"  Тестовая: {len(X_test)} образцов")
-    
-    # Создание датасетов
     train_dataset = RTKDataset(X_train, y_train, config, augment=True)
     val_dataset = RTKDataset(X_val, y_val, config, augment=False)
     test_dataset = RTKDataset(X_test, y_test, config, augment=False)
     
-    # Создание DataLoader
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
+    
+    print(f"  Обучающая: {len(train_dataset)} образцов")
+    print(f"  Валидационная: {len(val_dataset)} образцов")
+    print(f"  Тестовая: {len(test_dataset)} образцов")
     
     return train_loader, val_loader, test_loader
 
 
+
+# ============================================================
+# ПРОВЕРКА
+# ============================================================
 if __name__ == '__main__':
-    # Тест генератора
-    config = Config
-    config.set_seed()
-    config.ensure_dirs()
+    from config import Config
     
-    generator = SyntheticDataGenerator(config)
+    Config.set_seed()
+    Config.SYNTHETIC_SAMPLES_PER_CLASS = 50
     
-    # Тест 1: Генерация небольшого датасета (глава 3)
-    print("\n" + "=" * 60)
-    print("ТЕСТ 1: ГЕНЕРАЦИЯ НЕБОЛЬШОГО ДАТАСЕТА (ГЛАВА 3)")
-    print("=" * 60)
-    X, y = generator.generate_dataset()  # теперь использует config.SYNTHETIC_SAMPLES_PER_CLASS
-    generator.save_to_csv(X, y, config.DATA_PATH)
+    generator = SyntheticDataGenerator(Config)
+    X, y = generator.generate_dataset(samples_per_class=50)
     
-    # Тест 2: Проверка через Dataset
-    print("\n" + "=" * 60)
-    print("ТЕСТ 2: ПРОВЕРКА DATASET")
-    print("=" * 60)
-    dataset = RTKDataset(X, y, config, augment=False)
-    print(f"Dataset: {len(dataset)} образцов")
-    sample_x, sample_y = dataset[0]
-    print(f"Пример образца: x.shape = {sample_x.shape}, y = {sample_y}")
+    print(f"\n📊 Статистика данных:")
+    print(f"  min: {X.min():.4f}")
+    print(f"  max: {X.max():.4f}")
+    print(f"  mean: {X.mean():.4f}")
+    print(f"  std: {X.std():.4f}")
     
-    # Тест 3: Проверка аугментации
-    print("\n" + "=" * 60)
-    print("ТЕСТ 3: ПРОВЕРКА АУГМЕНТАЦИИ")
-    print("=" * 60)
-    dataset_aug = RTKDataset(X, y, config, augment=True)
-    sample_x_aug, _ = dataset_aug[0]
-    diff = (sample_x_aug - sample_x).abs().mean().item()
-    print(f"Среднее изменение после аугментации: {diff:.6f}")
-    
-    # Тест 4: Генерация большого датасета (глава 2)
-    print("\n" + "=" * 60)
-    print("ТЕСТ 4: ГЕНЕРАЦИЯ БОЛЬШОГО ДАТАСЕТА (ГЛАВА 2)")
-    print("=" * 60)
-    X_large, y_large = generator.generate_large_dataset(samples_per_class=2000)
-    
-    # Тест 5: Проверка DataLoader
-    print("\n" + "=" * 60)
-    print("ТЕСТ 5: ПРОВЕРКА DATALOADER")
-    print("=" * 60)
-    train_loader, val_loader, test_loader = create_dataloaders(config, X_large, y_large)
-    batch_x, batch_y = next(iter(train_loader))
-    print(f"Батч из train_loader: x.shape = {batch_x.shape}, y.shape = {batch_y.shape}")
-    
-    print("\n" + "=" * 60)
-    print("ВСЕ ТЕСТЫ ПРОЙДЕНЫ УСПЕШНО")
-    print("=" * 60)
+    # Проверка корреляций
+    X_flat = X.reshape(-1, 4)
+    corr = np.corrcoef(X_flat.T)
+    print(f"\n📊 Реальная матрица корреляции:")
+    print(corr.round(3))

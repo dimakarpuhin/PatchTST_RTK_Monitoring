@@ -588,7 +588,7 @@ class ModifiedPatchTST(nn.Module):
             attn_logits = torch.matmul(q, k.transpose(-2, -1)) * scale
             
             # Softmax
-            attn_weights = torch.softmax(attn_logits, dim=-1)
+            attn_weights = torch.softmax(attn_logits / 0.3, dim=-1)
             attention_weights.append(attn_weights.detach().cpu())
         
         # Вешаем хук на последний блок
