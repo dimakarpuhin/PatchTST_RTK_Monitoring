@@ -489,10 +489,50 @@ def main():
     Config.validate()
     
     # Параметры синтетических данных
-    samples_per_class = getattr(Config, 'SYNTHETIC_SAMPLES_PER_CLASS', 24)
+    samples_per_class = getattr(Config, 'SYNTHETIC_SAMPLES_PER_CLASS', 100)
     
+
+# ===== ГЕНЕРАЦИЯ СЛОЖНЫХ ДАННЫХ =====
+    print("\n" + "=" * 50)
+    print("ГЕНЕРАЦИЯ СЛОЖНЫХ ДАННЫХ")
+    print("=" * 50)
+    
+    generator = SyntheticDataGenerator(Config)
+    #X, y = generator.generate_complex_dataset(samples_per_class=samples_per_class) #- Для эксперимента по усложнению данных Эксперимент 15
+    #X, y = generator.generate_dataset(samples_per_class=samples_per_class)  # НЕ complex!
+    # Только шум (без дрейфа, пропусков, перекрытия)
+    X, y = generator.generate_complex_dataset(
+        samples_per_class=200,
+        use_drift=True,
+        use_dropouts=False,
+        use_overlap=False,
+        noise_level=0.04,
+        dropout_prob=0.01
+    )
+
+
+    # Разделение на train/val
+    from sklearn.model_selection import train_test_split
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=Config.RANDOM_SEED
+    )
+    
+    # Создание DataLoader
+    from torch.utils.data import DataLoader
+    from synthetic_data import RTKDataset
+    
+    train_dataset = RTKDataset(X_train, y_train, Config, augment=True)
+    val_dataset = RTKDataset(X_val, y_val, Config, augment=False)
+    
+    train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
+    
+    print(f"Обучающая выборка: {len(train_dataset)} образцов")
+    print(f"Валидационная выборка: {len(val_dataset)} образцов")
+
+
     # Подготовка данных
-    train_loader, val_loader = prepare_data(Config, samples_per_class=samples_per_class)
+    #train_loader, val_loader = prepare_data(Config, samples_per_class=samples_per_class)
     
     # Создание модели
     #model = create_model(Config) - закомментировал данную строчку перед 3 экспериментом по сравнению LTSM c PatchTST
