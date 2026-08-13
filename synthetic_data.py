@@ -384,6 +384,59 @@ class SyntheticDataGenerator:
         return X, y.astype(np.int64)
 
 
+
+    def generate_dataset_with_channels(self, samples_per_class: int = 500, num_channels: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+        """Генерация синтетических данных с заданным числом каналов"""
+        
+        print("=" * 60)
+        print("ГЕНЕРАЦИЯ СИНТЕТИКИ С 5 КАНАЛАМИ")
+        print("=" * 60)
+        print(f"  Образцов на класс: {samples_per_class}")
+        print(f"  Число каналов: {num_channels}")
+        
+        # Сохраняем оригинальное число каналов
+        original_channels = self.num_channels
+        self.num_channels = num_channels
+        
+        # Генерируем данные
+        data_normal = self.generate_normal(samples_per_class)
+        data_voltage = self.generate_voltage_surge(samples_per_class)
+        data_current = self.generate_current_overload(samples_per_class)
+        data_temp = self.generate_overheat(samples_per_class)
+        data_noise = self.generate_electromagnetic_interference(samples_per_class)
+        
+        # Если каналов больше, чем 4, добавляем фиктивные каналы
+        if num_channels > 4:
+            extra_channels = num_channels - 4
+            datasets = [data_normal, data_voltage, data_current, data_temp, data_noise]
+            for i, dataset in enumerate(datasets):
+                for _ in range(extra_channels):
+                    extra = np.random.randn(dataset.shape[0], dataset.shape[1], 1) * 0.1
+                    dataset = np.concatenate([dataset, extra], axis=2)
+                datasets[i] = dataset
+            data_normal, data_voltage, data_current, data_temp, data_noise = datasets
+        
+        X = np.vstack([data_normal, data_voltage, data_current, data_temp, data_noise])
+        y = np.hstack([
+            np.zeros(samples_per_class),
+            np.ones(samples_per_class),
+            2 * np.ones(samples_per_class),
+            3 * np.ones(samples_per_class),
+            4 * np.ones(samples_per_class)
+        ])
+        
+        idx = np.random.permutation(len(X))
+        X = X[idx]
+        y = y[idx]
+        
+        # Восстанавливаем число каналов
+        self.num_channels = original_channels
+        
+        print(f"  Готово: X.shape = {X.shape}, y.shape = {y.shape}")
+        print("=" * 60)
+        
+        return X, y.astype(np.int64)
+
 # ============================================================
 # RTKDataset
 # ============================================================
@@ -405,7 +458,7 @@ class RTKDataset(Dataset):
             x = self.apply_augmentation(x)
         return x, y
     
-    def apply_augmentation(self, x):
+    '''def apply_augmentation(self, x):
         if torch.isnan(x).any():
             col_mean = torch.nanmean(x, dim=0)
             for c in range(self.config.NUM_CHANNELS):
@@ -414,8 +467,38 @@ class RTKDataset(Dataset):
         noise = torch.randn_like(x)
         for c in range(self.config.NUM_CHANNELS):
             noise[:, c] *= aug_std[c] * torch.std(x[:, c])
-        return x + noise
+        return x + noise'''
 
+
+    def apply_augmentation(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Физически обоснованная аугментация
+        """
+        # Замена nan на среднее значение
+        if torch.isnan(x).any():
+            col_mean = torch.nanmean(x, dim=0)
+            for c in range(self.config.NUM_CHANNELS):
+                x[:, c] = torch.where(torch.isnan(x[:, c]), col_mean[c], x[:, c])
+        
+        # Реалистичные уровни шума для аугментации
+        num_channels = self.config.NUM_CHANNELS
+        
+        # Базовые уровни шума для первых 4 каналов (как в синтетике)
+        # [напряжение, ток, температура, помехи]
+        base_aug_std = [0.03, 0.04, 0.02, 0.10]
+        
+        # Расширяем список под количество каналов
+        if num_channels <= 4:
+            aug_std = base_aug_std[:num_channels]
+        else:
+            # Для дополнительных каналов (5, 6, ...) используем уровень 0.05
+            aug_std = base_aug_std + [0.05] * (num_channels - 4)
+        
+        noise = torch.randn_like(x)
+        for c in range(num_channels):
+            noise[:, c] *= aug_std[c] * torch.std(x[:, c])
+        
+        return x + noise
 
 # ============================================================
 # ФУНКЦИЯ ДЛЯ СОЗДАНИЯ DATALOADER
@@ -447,6 +530,7 @@ def create_dataloaders_from_arrays(X, y, config, train_ratio=0.7, val_ratio=0.15
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     
     return train_loader, val_loader, test_loader
+
 
 
 # ============================================================
