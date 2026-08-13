@@ -1,155 +1,283 @@
-# run_pm_ablation.py
-# Ablation Study на реальных данных Predictive Maintenance
+# plot_all_graphics.py
+# Построение ВСЕХ графиков для диссертации в одном скрипте
 
-import numpy as np
-import torch
 import pandas as pd
-import time
+import matplotlib.pyplot as plt
+import numpy as np
 import os
-from config import Config
-from model import create_model
-from train import Trainer
-from torch.utils.data import DataLoader, TensorDataset
+from sklearn.metrics import ConfusionMatrixDisplay
+import joblib
 
-def load_pm_processed():
-    X_train = np.load(f'{Config.PM_PROCESSED_PATH}/X_train.npy')
-    y_train = np.load(f'{Config.PM_PROCESSED_PATH}/y_train.npy')
-    X_val = np.load(f'{Config.PM_PROCESSED_PATH}/X_val.npy')
-    y_val = np.load(f'{Config.PM_PROCESSED_PATH}/y_val.npy')
-    X_test = np.load(f'{Config.PM_PROCESSED_PATH}/X_test.npy')
-    y_test = np.load(f'{Config.PM_PROCESSED_PATH}/y_test.npy')
-    return X_train, y_train, X_val, y_val, X_test, y_test
+# Настройки шрифта
+plt.rcParams['font.family'] = 'Segoe UI'
+plt.rcParams['axes.unicode_minus'] = False
 
-def run_ablation_experiment(name, config_mods):
-    """Запуск одного эксперимента Ablation Study"""
+os.makedirs('images', exist_ok=True)
+
+print("=" * 60)
+print("📈 ПОСТРОЕНИЕ ВСЕХ ГРАФИКОВ ДЛЯ ДИССЕРТАЦИИ")
+print("=" * 60)
+
+# ============================================================
+# 1. ГРАФИК: СХОДИМОСТЬ ОДНОЙ МОДЕЛИ (4 линии)
+# ============================================================
+
+def plot_single_convergence():
+    print("1. Сходимость одной модели...")
+    try:
+        df = pd.read_csv('logs/training_history.csv')
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        ax1 = axes[0]
+        ax1.plot(df['train_loss'], label='Train Loss', color='#e74c3c', linewidth=2)
+        ax1.plot(df['val_loss'], label='Val Loss', color='#3498db', linewidth=2)
+        ax1.set_xlabel('Эпоха', fontsize=12)
+        ax1.set_ylabel('Loss', fontsize=12)
+        ax1.set_title('Функция потерь (модифицированный PatchTST)', fontsize=14)
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        ax2 = axes[1]
+        ax2.plot(df['train_acc'], label='Train Accuracy', color='#e74c3c', linewidth=2)
+        ax2.plot(df['val_acc'], label='Val Accuracy', color='#3498db', linewidth=2)
+        ax2.set_xlabel('Эпоха', fontsize=12)
+        ax2.set_ylabel('Точность (%)', fontsize=12)
+        ax2.set_title('Точность классификации (модифицированный PatchTST)', fontsize=14)
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig('images/convergence_single_model.png', dpi=300)
+        print("   ✅ images/convergence_single_model.png")
+        plt.close()
+    except Exception as e:
+        print(f"   ⚠️ Ошибка: {e}")
+
+# ============================================================
+# 2. ГРАФИК: СРАВНЕНИЕ ВСЕХ 6 МОДЕЛЕЙ
+# ============================================================
+
+def plot_all_models():
+    print("2. Сравнение всех 6 моделей...")
     
-    print("=" * 60)
-    print(f"🧪 ЭКСПЕРИМЕНТ: {name}")
-    print("=" * 60)
-    
-    # Загрузка данных
-    X_train, y_train, X_val, y_val, X_test, y_test = load_pm_processed()
-    
-    # Настройка Config
-    Config.WINDOW_LENGTH = X_train.shape[1]
-    Config.NUM_CHANNELS = X_train.shape[2]
-    Config.NUM_CLASSES = 2
-    Config.D_MODEL = 30
-    Config.NUM_LAYERS = 2
-    Config.NUM_HEADS = 2
-    Config.DROPOUT = 0.3
-    Config.LAMBDA_1 = 1e-3
-    Config.MASK_PROB = 0.15
-    Config.BATCH_SIZE = 32
-    Config.NUM_EPOCHS = 30
-    Config.EARLY_STOPPING_PATIENCE = 10
-    
-    # Применяем изменения
-    original_values = {}
-    for key, value in config_mods.items():
-        if hasattr(Config, key):
-            original_values[key] = getattr(Config, key)
-            setattr(Config, key, value)
-            print(f"   {key} = {value}")
-    
-    # DataLoader
-    train_dataset = TensorDataset(torch.FloatTensor(X_train), torch.LongTensor(y_train))
-    val_dataset = TensorDataset(torch.FloatTensor(X_val), torch.LongTensor(y_val))
-    test_dataset = TensorDataset(torch.FloatTensor(X_test), torch.LongTensor(y_test))
-    
-    train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
-    
-    # Модель
-    model = create_model(Config)
-    trainer = Trainer(model, Config)
-    
-    # Обучение
-    start_time = time.time()
-    best_acc = trainer.train(train_loader, val_loader, Config.NUM_EPOCHS)
-    elapsed = time.time() - start_time
-    
-    # Тестирование
-    test_loss, test_acc = trainer.validate(test_loader)
-    
-    from sklearn.metrics import f1_score
-    model.eval()
-    all_preds = []
-    all_targets = []
-    with torch.no_grad():
-        for data, targets in test_loader:
-            data = data.to(Config.DEVICE)
-            targets = targets.to(Config.DEVICE)
-            logits, _ = model(data, use_masking=False)
-            preds = torch.argmax(logits, dim=-1)
-            all_preds.extend(preds.cpu().numpy())
-            all_targets.extend(targets.cpu().numpy())
-    f1 = f1_score(all_targets, all_preds, average='binary')
-    
-    # Восстанавливаем значения
-    for key, value in original_values.items():
-        setattr(Config, key, value)
-    
-    return {
-        'experiment': name,
-        'val_acc': best_acc,
-        'test_acc': test_acc,
-        'test_f1': f1,
-        'time_sec': round(elapsed, 1)
+    models = {
+        'PatchTST (модиф.)': {'file': 'logs/training_history_patchtst.csv', 'color': '#2ecc71', 'linestyle': '-'},
+        'PatchTST (базовый)': {'file': 'logs/training_history_patchtst_baseline.csv', 'color': '#e74c3c', 'linestyle': '--'},
+        'LSTM': {'file': 'logs/training_history_lstm.csv', 'color': '#3498db', 'linestyle': '-.'},
+        'GRU': {'file': 'logs/training_history_gru.csv', 'color': '#f39c12', 'linestyle': ':'},
+        'TCN': {'file': 'logs/training_history_tcn.csv', 'color': '#9b59b6', 'linestyle': '-'},
+        'Transformer': {'file': 'logs/training_history_transformer.csv', 'color': '#1abc9c', 'linestyle': '--'}
     }
+    
+    loaded = {}
+    for name, cfg in models.items():
+        if os.path.exists(cfg['file']):
+            loaded[name] = {'df': pd.read_csv(cfg['file']), 'cfg': cfg}
+    
+    if not loaded:
+        print("   ⚠️ Нет данных для сравнения")
+        return
+    
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    
+    ax1 = axes[0]
+    for name, data in loaded.items():
+        df = data['df']
+        cfg = data['cfg']
+        if 'val_loss' in df.columns:
+            ax1.plot(df['val_loss'], label=name, color=cfg['color'], linestyle=cfg['linestyle'], linewidth=2)
+    ax1.set_xlabel('Эпоха', fontsize=12)
+    ax1.set_ylabel('Loss', fontsize=12)
+    ax1.set_title('Сравнение сходимости: Loss', fontsize=14)
+    ax1.legend(loc='upper right', fontsize=9)
+    ax1.grid(True, alpha=0.3)
+    
+    ax2 = axes[1]
+    for name, data in loaded.items():
+        df = data['df']
+        cfg = data['cfg']
+        if 'val_acc' in df.columns:
+            ax2.plot(df['val_acc'], label=name, color=cfg['color'], linestyle=cfg['linestyle'], linewidth=2)
+    ax2.set_xlabel('Эпоха', fontsize=12)
+    ax2.set_ylabel('Точность (%)', fontsize=12)
+    ax2.set_title('Сравнение сходимости: точность', fontsize=14)
+    ax2.legend(loc='lower right', fontsize=9)
+    ax2.grid(True, alpha=0.3)
+    ax2.set_ylim(0, 105)
+    
+    plt.tight_layout()
+    plt.savefig('images/convergence_all_models.png', dpi=300)
+    print("   ✅ images/convergence_all_models.png")
+    plt.close()
 
-def main():
-    print("=" * 70)
-    print("🔬 ABLATION STUDY НА РЕАЛЬНЫХ ДАННЫХ (PM)")
-    print("=" * 70)
+# ============================================================
+# 3. ГРАФИК: СРАВНЕНИЕ 3 ЛУЧШИХ МОДЕЛЕЙ
+# ============================================================
+
+def plot_best_models():
+    print("3. Сравнение 3 лучших моделей...")
     
-    results = []
+    models = {
+        'PatchTST (модиф.)': {'file': 'logs/training_history_patchtst.csv', 'color': '#2ecc71'},
+        'GRU': {'file': 'logs/training_history_gru.csv', 'color': '#f39c12'},
+        'Transformer': {'file': 'logs/training_history_transformer.csv', 'color': '#1abc9c'}
+    }
     
-    # 1. Полная модель
-    results.append(run_ablation_experiment(
-        'Full Model', {}
-    ))
+    loaded = {}
+    for name, cfg in models.items():
+        if os.path.exists(cfg['file']):
+            loaded[name] = pd.read_csv(cfg['file'])
     
-    # 2. Без Adaptive Encoding
-    results.append(run_ablation_experiment(
-        'Without LAPE', {'USE_ADAPTIVE_ENCODING': False}
-    ))
+    if len(loaded) < 2:
+        print("   ⚠️ Недостаточно данных")
+        return
     
-    # 3. Без Channel Attention
-    results.append(run_ablation_experiment(
-        'Without FA', {'USE_CHANNEL_ATTENTION': False}
-    ))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
-    # 4. Без Contrastive Loss
-    results.append(run_ablation_experiment(
-        'Without CRCE', {'LAMBDA_2': 0}
-    ))
+    ax1 = axes[0]
+    for name, df in loaded.items():
+        ax1.plot(df['val_loss'], label=name, linewidth=2, color=models[name]['color'])
+    ax1.set_xlabel('Эпоха', fontsize=12)
+    ax1.set_ylabel('Loss', fontsize=12)
+    ax1.set_title('Сравнение лучших: Loss', fontsize=14)
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
     
-    # 5. Без Masking
-    results.append(run_ablation_experiment(
-        'Without SPM', {'MASK_PROB': 0}
-    ))
+    ax2 = axes[1]
+    for name, df in loaded.items():
+        ax2.plot(df['val_acc'], label=name, linewidth=2, color=models[name]['color'])
+    ax2.set_xlabel('Эпоха', fontsize=12)
+    ax2.set_ylabel('Точность (%)', fontsize=12)
+    ax2.set_title('Сравнение лучших: точность', fontsize=14)
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+    ax2.set_ylim(0, 105)
     
-    # 6. Базовый PatchTST
-    results.append(run_ablation_experiment(
-        'Baseline', {
-            'USE_ADAPTIVE_ENCODING': False,
-            'USE_CHANNEL_ATTENTION': False,
-            'LAMBDA_2': 0,
-            'MASK_PROB': 0
-        }
-    ))
+    plt.tight_layout()
+    plt.savefig('images/convergence_best_models.png', dpi=300)
+    print("   ✅ images/convergence_best_models.png")
+    plt.close()
+
+# ============================================================
+# 4. ГРАФИК: FEW-SHOT LEARNING
+# ============================================================
+
+def plot_few_shot():
+    print("4. Few-Shot Learning...")
+    try:
+        df = pd.read_csv('logs/pm_few_shot_results.csv')
+        plt.figure(figsize=(10, 6))
+        
+        models = df['model'].unique()
+        colors = ['#2ecc71', '#e74c3c', '#3498db', '#f39c12', '#9b59b6', '#1abc9c']
+        
+        for i, model in enumerate(models):
+            subset = df[df['model'] == model].sort_values('sample_ratio')
+            plt.plot(subset['sample_ratio'] * 100, subset['test_f1'], 
+                    marker='o', linewidth=2, color=colors[i % len(colors)], label=model)
+        
+        plt.xlabel('Размер выборки (%)', fontsize=12)
+        plt.ylabel('F1-score', fontsize=12)
+        plt.title('Few-Shot Learning: F1 vs размер выборки', fontsize=14)
+        plt.legend(loc='lower right', fontsize=9)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig('images/few_shot_convergence.png', dpi=300)
+        print("   ✅ images/few_shot_convergence.png")
+        plt.close()
+    except Exception as e:
+        print(f"   ⚠️ Ошибка: {e}")
+
+# ============================================================
+# 5. ГРАФИК: ABLATION STUDY (СТОЛБЧАТАЯ ДИАГРАММА)
+# ============================================================
+
+def plot_ablation():
+    print("5. Ablation Study...")
     
-    # Сводная таблица
-    df = pd.DataFrame(results)
-    print("\n" + "=" * 70)
-    print("📊 СВОДНАЯ ТАБЛИЦА ABLATION STUDY (РЕАЛЬНЫЕ ДАННЫЕ)")
-    print("=" * 70)
-    print(df.to_string(index=False))
+    configs = ['Full', 'Без FA', 'Без CRCE', 'Без LAPE', 'Без SPM', 'Baseline']
+    f1 = [0.569, 0.467, 0.615, 0.543, 0.543, 0.536]
+    colors = ['#2ecc71', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#e74c3c']
     
-    df.to_csv('logs/pm_ablation_results.csv', index=False)
-    print("\n💾 Результаты сохранены в logs/pm_ablation_results.csv")
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(configs, f1, color=colors, edgecolor='black')
+    plt.ylabel('F1-score', fontsize=12)
+    plt.title('Ablation Study: вклад модификаций', fontsize=14)
+    plt.ylim(0, 0.7)
+    plt.grid(axis='y', alpha=0.3)
+    
+    for bar, score in zip(bars, f1):
+        plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01, 
+                f'{score:.3f}', ha='center', va='bottom', fontsize=10)
+    
+    plt.tight_layout()
+    plt.savefig('images/ablation_results.png', dpi=300)
+    print("   ✅ images/ablation_results.png")
+    plt.close()
+
+# ============================================================
+# 6. ГРАФИК: УСТОЙЧИВОСТЬ К ШУМУ (SNR)
+# ============================================================
+
+def plot_noise():
+    print("6. Устойчивость к шуму...")
+    
+    snr = [5, 10, 15, 20, 30, 40]
+    patchtst = [23, 44, 57, 72, 84, 86]
+    baseline = [24, 39, 49, 67, 73, 74]
+    no_fa = [20, 20, 20, 20, 20, 20]
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(snr, patchtst, marker='o', linewidth=2, label='PatchTST (модиф.)', color='#2ecc71')
+    plt.plot(snr, baseline, marker='s', linewidth=2, label='PatchTST (базовый)', color='#e74c3c')
+    plt.plot(snr, no_fa, marker='^', linewidth=2, label='Без FA', color='#3498db', linestyle='--')
+    
+    plt.xlabel('SNR (дБ)', fontsize=12)
+    plt.ylabel('Точность (%)', fontsize=12)
+    plt.title('Устойчивость к шуму (SNR)', fontsize=14)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.ylim(0, 100)
+    
+    plt.tight_layout()
+    plt.savefig('images/noise_robustness.png', dpi=300)
+    print("   ✅ images/noise_robustness.png")
+    plt.close()
+
+# ============================================================
+# 7. ВЫВОД СПИСКА ВСЕХ ГРАФИКОВ
+# ============================================================
+
+print("\n" + "=" * 60)
+print("📊 ВСЕ ГРАФИКИ СОЗДАНЫ")
+print("=" * 60)
+
+graphics = [
+    'convergence_single_model.png',
+    'convergence_all_models.png',
+    'convergence_best_models.png',
+    'few_shot_convergence.png',
+    'ablation_results.png',
+    'noise_robustness.png'
+]
+
+for g in graphics:
+    if os.path.exists(f'images/{g}'):
+        print(f"   ✅ {g}")
+    else:
+        print(f"   ❌ {g} (не найден)")
+
+print("\n📂 Папка: images/")
+print("=" * 60)
+
+# ============================================================
+# ЗАПУСК ВСЕХ ФУНКЦИЙ
+# ============================================================
 
 if __name__ == '__main__':
-    main()
+    plot_single_convergence()
+    plot_all_models()
+    plot_best_models()
+    plot_few_shot()
+    plot_ablation()
+    plot_noise()
