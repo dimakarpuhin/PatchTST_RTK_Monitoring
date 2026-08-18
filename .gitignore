@@ -23,7 +23,18 @@ models/
 # Логи 
 logs/
 *.log
+*.csv
 
 # Настройки редакторов
 .vscode/
 .idea/
+
+# Папки с изображениями 
+images/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.svg
