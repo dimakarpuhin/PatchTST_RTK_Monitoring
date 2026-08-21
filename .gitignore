@@ -38,3 +38,7 @@ images/
 *.bmp
 *.tiff
 *.svg
+
+
+# Папки
+old/
