@@ -306,7 +306,7 @@ class Trainer:
             if val_acc > self.best_val_acc:
                 self.best_val_acc = val_acc
                 self.best_val_loss = val_loss
-                self.save_model(self.config.MODEL_SAVE_PATH)
+                #self.save_model(self.config.MODEL_SAVE_PATH)
                 patience_counter = 0
                 print(f"  >>> Новая лучшая модель сохранена (Acc: {val_acc:.2f}%, Loss: {val_loss:.4f})")
             else:

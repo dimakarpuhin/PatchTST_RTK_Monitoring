@@ -1,4 +1,6 @@
 # load_pm_data.py
+# РАБОЧАЯ ВЕРСИЯ — исходный стратифицированный случайный сплит
+
 import pandas as pd
 import numpy as np
 import os
@@ -32,9 +34,9 @@ def load_pm_data():
     y = np.zeros(len(df), dtype=int)
     for i, (idx, row) in enumerate(df.iterrows()):
         if row[failure_cols].sum() > 0:
-            y[i] = 1  # отказ
+            y[i] = 1
         else:
-            y[i] = 0  # норма
+            y[i] = 0
     
     print(f"\n  Распределение классов (бинарное):")
     print(f"    0 (No Failure): {np.sum(y == 0)} ({np.sum(y == 0)/len(y)*100:.1f}%)")
@@ -44,7 +46,7 @@ def load_pm_data():
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_raw)
     
-        # ===== СОЗДАНИЕ ВРЕМЕННЫХ ОКОН (сбалансированное) =====
+    # ===== СОЗДАНИЕ ВРЕМЕННЫХ ОКОН (сбалансированное) =====
     window_len = Config.PM_WINDOW_LENGTH
     step = window_len // 2
     
@@ -75,7 +77,12 @@ def load_pm_data():
     X = np.array(X)
     y = np.array(y_windowed)
     
-    # ===== РАЗДЕЛЕНИЕ =====
+    print(f"\n  Создано окон: {X.shape}")
+    print(f"  Распределение классов в окнах:")
+    print(f"    Класс 0 (норма): {np.sum(y == 0)} ({np.sum(y == 0)/len(y)*100:.1f}%)")
+    print(f"    Класс 1 (отказ): {np.sum(y == 1)} ({np.sum(y == 1)/len(y)*100:.1f}%)")
+    
+    # ===== СТРАТИФИЦИРОВАННЫЙ СЛУЧАЙНЫЙ СПЛИТ (ИСХОДНЫЙ) =====
     X_train, X_temp, y_train, y_temp = train_test_split(
         X, y, test_size=0.3, stratify=y, random_state=42
     )
@@ -84,6 +91,11 @@ def load_pm_data():
     )
     
     print(f"\n  Train: {X_train.shape}, Val: {X_val.shape}, Test: {X_test.shape}")
+    
+    print(f"\n  Распределение классов:")
+    for name, y_cur in [('Train', y_train), ('Val', y_val), ('Test', y_test)]:
+        if len(y_cur) > 0:
+            print(f"    {name}: класс 0 = {np.sum(y_cur == 0)}, класс 1 = {np.sum(y_cur == 1)}")
     
     # ===== СОХРАНЕНИЕ =====
     os.makedirs(Config.PM_PROCESSED_PATH, exist_ok=True)
