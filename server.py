@@ -18,6 +18,8 @@ from config import Config
 from model import create_model
 from data_loader import DataPreprocessor, RealtimeDataBuffer
 
+from database import add_window, add_result
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -235,6 +237,32 @@ async def classify(data: WindowData):
         class_name = CLASS_NAMES.get(class_id, f"Класс {class_id}")
         
         latency_ms = (time.time() - start_time) * 1000
+
+        # ===== СОХРАНЕНИЕ В БД =====
+        try:
+            from database import add_window, add_result
+            from datetime import datetime
+            
+            # Сохраняем окно
+            window_id = add_window(
+                session_id="session_001",  # можно передавать из запроса
+                timestamp=datetime.now().isoformat(),
+                window_data=window.tolist(),  # преобразуем numpy в список
+                label=class_id
+            )
+            
+            # Сохраняем результат
+            add_result(
+                window_id=window_id,
+                class_id=class_id,
+                class_name=class_name,
+                probabilities=probs,
+                latency_ms=latency_ms
+            )
+            print(f"💾 Результат сохранён в БД (window_id={window_id})")
+        except Exception as e:
+            print(f"⚠️ Ошибка сохранения в БД: {e}")
+        # =================================
         
         return ClassificationResponse(
             class_id=class_id,
