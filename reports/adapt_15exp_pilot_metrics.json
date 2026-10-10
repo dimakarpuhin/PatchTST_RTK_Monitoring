@@ -1,0 +1,24 @@
+{
+  "best_epoch": 10,
+  "best_val_macro_f1": 0.9672278338945005,
+  "test_accuracy": 0.5,
+  "test_balanced_accuracy": 0.3918300653594771,
+  "test_macro_f1": 0.4174454828660436,
+  "confusion_matrix": [
+    [
+      47,
+      0,
+      13
+    ],
+    [
+      0,
+      0,
+      23
+    ],
+    [
+      0,
+      31,
+      20
+    ]
+  ]
+}

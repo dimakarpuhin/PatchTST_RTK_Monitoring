@@ -111,9 +111,12 @@ def main():
     Config.PATCH_LEN = 4
     Config.PATCH_STRIDE = 2
 
-    # 114 кратно 57 каналам и 3 головам внимания.
-    Config.D_MODEL = 114
-    Config.NUM_HEADS = 3
+    # Размер определяется числом оставшихся каналов.
+    # 130 кратно 65 каналам и двум головам внимания.
+    Config.D_MODEL = (
+        2 * Config.NUM_CHANNELS
+    )
+    Config.NUM_HEADS = 2
     Config.NUM_LAYERS = 2
 
     Config.DROPOUT = 0.3
@@ -392,7 +395,7 @@ def main():
 
     model_path = (
         models_dir
-        / "adapt_patchtst_pilot.pth"
+        / "adapt_patchtst_15exp_pilot.pth"
     )
 
     torch.save(
@@ -407,7 +410,7 @@ def main():
 
     with (
         reports_dir
-        / "adapt_pilot_history.csv"
+        / "adapt_15exp_pilot_history.csv"
     ).open(
         "w",
         encoding="utf-8",
@@ -433,7 +436,7 @@ def main():
 
     with (
         reports_dir
-        / "adapt_pilot_metrics.json"
+        / "adapt_15exp_pilot_metrics.json"
     ).open(
         "w",
         encoding="utf-8",
@@ -448,7 +451,7 @@ def main():
     print(f"\nМодель сохранена: {model_path}")
     print(
         "Метрики сохранены: "
-        "reports/adapt_pilot_metrics.json"
+        "reports/adapt_15exp_pilot_metrics.json"
     )
 
 
