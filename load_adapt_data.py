@@ -14,6 +14,14 @@ EXPERIMENT_IDS = {
     "309",
     "310",
     "311",
+    "441",
+    "442",
+    "443",
+    "445",
+    "447",
+    "449",
+    "451",
+    "452",
 }
 
 LABEL_NAMES = {
@@ -142,12 +150,16 @@ def load_adapt_data():
             if row and row[0] == "FaultInject"
         ]
 
-        if len(faults) != 1:
+        if not faults:
             raise ValueError(
                 f"В эксперименте {experiment_id} "
-                f"ожидался один отказ, найдено: "
-                f"{len(faults)}"
+                "нет событий отказа"
             )
+
+        faults = sorted(
+            faults,
+            key=lambda row: parse_time(row[1]),
+        )
 
         timestamps = [
             parse_time(row[1])
@@ -167,11 +179,39 @@ def load_adapt_data():
             dtype=np.float32,
         )
 
-        fault_time = parse_time(faults[0][1])
+        first_fault_time = parse_time(
+            faults[0][1]
+        )
+
+        # Несколько отказов могут быть внесены
+        # одновременно.
+        first_faults = [
+            fault
+            for fault in faults
+            if parse_time(fault[1])
+            == first_fault_time
+        ]
+
+        first_fault_labels = {
+            1 if fault[3] == "Sensor" else 2
+            for fault in first_faults
+        }
+
+        if len(first_fault_labels) != 1:
+            print(
+                f"Эксперимент {experiment_id} "
+                "пропущен: одновременно внесены "
+                "отказы разных классов"
+            )
+            continue
+
+        fault_label = next(
+            iter(first_fault_labels)
+        )
 
         time_difference = np.array([
             abs(
-                (timestamp - fault_time)
+                (timestamp - first_fault_time)
                 .total_seconds()
             )
             for timestamp in timestamps
@@ -181,20 +221,49 @@ def load_adapt_data():
             np.argmin(time_difference)
         )
 
-        component_type = faults[0][3]
+        # По умолчанию используем данные
+        # от первого отказа до конца опыта.
+        fault_segment_end = len(values)
 
-        if component_type == "Sensor":
-            fault_label = 1
-        else:
-            fault_label = 2
+        # Если позже появляется отказ другого класса,
+        # заканчиваем текущий участок перед ним.
+        for later_fault in faults:
+            later_fault_time = parse_time(
+                later_fault[1]
+            )
 
-        # Нормальный участок:
-        # [начало эксперимента, момент отказа)
+            if later_fault_time <= first_fault_time:
+                continue
+
+            later_fault_label = (
+                1
+                if later_fault[3] == "Sensor"
+                else 2
+            )
+
+            if later_fault_label != fault_label:
+                later_time_difference = np.array([
+                    abs(
+                        (
+                            timestamp
+                            - later_fault_time
+                        ).total_seconds()
+                    )
+                    for timestamp in timestamps
+                ])
+
+                fault_segment_end = int(
+                    np.argmin(
+                        later_time_difference
+                    )
+                )
+                break
+
         normal_values = values[:fault_index]
 
-        # Аварийный участок:
-        # [момент отказа, конец эксперимента]
-        fault_values = values[fault_index:]
+        fault_values = values[
+            fault_index:fault_segment_end
+        ]
 
         normal_result = create_windows(
             values=normal_values,
@@ -222,6 +291,8 @@ def load_adapt_data():
             f"Эксперимент {experiment_id}: "
             f"отсчётов={len(values)}, "
             f"индекс отказа={fault_index}, "
+            f"конец аварийного участка="
+            f"{fault_segment_end}, "
             f"класс={LABEL_NAMES[fault_label]}"
         )
 

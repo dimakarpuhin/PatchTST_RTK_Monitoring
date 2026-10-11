@@ -11,9 +11,29 @@ from load_adapt_data import (
 # Это пока проверочное разбиение для настройки конвейера.
 # В итоговом эксперименте перейдём к групповой
 # перекрёстной проверке.
-TRAIN_IDS = {"304", "305", "306"}
-VAL_IDS = {"308", "310"}
-TEST_IDS = {"309", "311"}
+TRAIN_IDS = {
+    "304",
+    "305",
+    "308",
+    "309",
+    "311",
+    "442",
+    "445",
+    "451",
+    "452",
+}
+
+VAL_IDS = {
+    "310",
+    "441",
+    "443",
+}
+
+TEST_IDS = {
+    "306",
+    "447",
+    "449",
+}
 NORMALIZED_CLIP_VALUE = 10.0
 
 def select_experiments(X, y, groups, experiment_ids):
@@ -46,30 +66,63 @@ def print_distribution(name, y, groups):
         )
 
 
-def prepare_adapt_data():
+def prepare_adapt_data(
+    train_ids=None,
+    val_ids=None,
+    test_ids=None,
+):
+    # Без аргументов сохраняется прежнее
+    # проверочное разбиение.
+    train_ids = set(
+        TRAIN_IDS
+        if train_ids is None
+        else train_ids
+    )
+
+    val_ids = set(
+        VAL_IDS
+        if val_ids is None
+        else val_ids
+    )
+
+    test_ids = set(
+        TEST_IDS
+        if test_ids is None
+        else test_ids
+    )
+
     X, y, groups, channels, metadata = (
         load_adapt_data()
     )
 
     all_split_ids = (
-        TRAIN_IDS
-        | VAL_IDS
-        | TEST_IDS
+        train_ids
+        | val_ids
+        | test_ids
     )
 
     if (
-        TRAIN_IDS & VAL_IDS
-        or TRAIN_IDS & TEST_IDS
-        or VAL_IDS & TEST_IDS
+        train_ids & val_ids
+        or train_ids & test_ids
+        or val_ids & test_ids
     ):
         raise ValueError(
             "Эксперименты пересекаются между выборками"
         )
 
     if set(groups) != all_split_ids:
+        missing_ids = (
+            set(groups) - all_split_ids
+        )
+
+        unknown_ids = (
+            all_split_ids - set(groups)
+        )
+
         raise ValueError(
-            "Не все эксперименты распределены "
-            "между train, val и test"
+            "Некорректное распределение экспериментов. "
+            f"Не распределены: {sorted(missing_ids)}. "
+            f"Неизвестные: {sorted(unknown_ids)}"
         )
 
     X_train, y_train, groups_train = (
@@ -77,7 +130,7 @@ def prepare_adapt_data():
             X,
             y,
             groups,
-            TRAIN_IDS,
+            train_ids,
         )
     )
 
@@ -86,7 +139,7 @@ def prepare_adapt_data():
             X,
             y,
             groups,
-            VAL_IDS,
+            val_ids,
         )
     )
 
@@ -95,7 +148,7 @@ def prepare_adapt_data():
             X,
             y,
             groups,
-            TEST_IDS,
+            test_ids,
         )
     )
 

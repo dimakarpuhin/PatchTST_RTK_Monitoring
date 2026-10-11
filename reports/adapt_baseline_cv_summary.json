@@ -1,0 +1,50 @@
+{
+  "number_of_folds": 5,
+  "number_of_experiments": 15,
+  "number_of_oof_windows": 521,
+  "global_metrics": {
+    "multiclass_accuracy": 0.6180422264875239,
+    "multiclass_balanced_accuracy": 0.41940298507462687,
+    "multiclass_macro_f1": 0.4065211655169814,
+    "multiclass_confusion_matrix": [
+      [
+        288,
+        7,
+        25
+      ],
+      [
+        47,
+        14,
+        6
+      ],
+      [
+        62,
+        52,
+        20
+      ]
+    ],
+    "binary_accuracy": 0.7293666026871402,
+    "binary_balanced_accuracy": 0.6788557213930348,
+    "binary_precision": 0.7419354838709677,
+    "binary_recall": 0.4577114427860697,
+    "binary_f1": 0.5661538461538461,
+    "binary_confusion_matrix": [
+      [
+        288,
+        32
+      ],
+      [
+        109,
+        92
+      ]
+    ]
+  },
+  "experiment_summary": {
+    "multiclass_macro_f1_mean": 0.33060981460974087,
+    "multiclass_macro_f1_std": 0.17109907109473033,
+    "binary_f1_mean": 0.3785502079619727,
+    "binary_f1_std": 0.4435549299349887,
+    "binary_recall_mean": 0.4708333333333333,
+    "binary_recall_std": 0.5126016159423092
+  }
+}
