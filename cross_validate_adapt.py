@@ -843,19 +843,19 @@ def main():
 
     write_csv(
         reports_dir
-        / "adapt_cv_fold_metrics.csv",
+        / "adapt_chapter2_arch_cv_fold_metrics.csv",
         fold_rows,
     )
 
     write_csv(
         reports_dir
-        / "adapt_cv_history.csv",
+        / "adapt_chapter2_arch_cv_history.csv",
         history_rows,
     )
 
     write_csv(
         reports_dir
-        / "adapt_cv_experiment_metrics.csv",
+        / "adapt_chapter2_arch_cv_experiment_metrics.csv",
         experiment_rows,
     )
 
@@ -880,7 +880,7 @@ def main():
 
     write_csv(
         reports_dir
-        / "adapt_cv_predictions.csv",
+        / "adapt_chapter2_arch_cv_predictions.csv",
         prediction_rows,
     )
 
@@ -898,7 +898,7 @@ def main():
 
     with (
         reports_dir
-        / "adapt_cv_summary.json"
+        / "adapt_chapter2_arch_cv_summary.json"
     ).open(
         "w",
         encoding="utf-8",
@@ -911,11 +911,11 @@ def main():
         )
 
     print("\nРезультаты сохранены:")
-    print("  reports/adapt_cv_fold_metrics.csv")
-    print("  reports/adapt_cv_history.csv")
-    print("  reports/adapt_cv_experiment_metrics.csv")
-    print("  reports/adapt_cv_predictions.csv")
-    print("  reports/adapt_cv_summary.json")
+    print("  reports/adapt_chapter2_arch_cv_fold_metrics.csv")
+    print("  reports/adapt_chapter2_arch_cv_history.csv")
+    print("  reports/adapt_chapter2_arch_cv_experiment_metrics.csv")
+    print("  reports/adapt_chapter2_arch_cv_predictions.csv")
+    print("  reports/adapt_chapter2_arch_cv_summary.json")
 
 
 if __name__ == "__main__":
