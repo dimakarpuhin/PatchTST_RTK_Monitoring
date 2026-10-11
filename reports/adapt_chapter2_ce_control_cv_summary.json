@@ -1,0 +1,55 @@
+{
+  "number_of_folds": 5,
+  "number_of_experiments": 15,
+  "number_of_oof_windows": 521,
+  "global_metrics": {
+    "multiclass_accuracy": 0.6410748560460653,
+    "multiclass_balanced_accuracy": 0.4474036069651741,
+    "multiclass_macro_f1": 0.4422491852004597,
+    "multiclass_confusion_matrix": [
+      [
+        291,
+        12,
+        17
+      ],
+      [
+        46,
+        15,
+        6
+      ],
+      [
+        54,
+        52,
+        28
+      ]
+    ],
+    "binary_accuracy": 0.7523992322456814,
+    "binary_balanced_accuracy": 0.7059312810945274,
+    "binary_precision": 0.7769230769230769,
+    "binary_recall": 0.5024875621890548,
+    "binary_f1": 0.6102719033232629,
+    "binary_confusion_matrix": [
+      [
+        291,
+        29
+      ],
+      [
+        100,
+        101
+      ]
+    ]
+  },
+  "experiment_summary": {
+    "multiclass_macro_f1_mean": 0.3638417271563512,
+    "multiclass_macro_f1_std": 0.19011923390083882,
+    "binary_f1_mean": 0.49070060772847146,
+    "binary_f1_std": 0.4674750809776486,
+    "binary_recall_mean": 0.5325,
+    "binary_recall_std": 0.4943836350157928
+  },
+  "training_loss": {
+    "name": "weighted_cross_entropy",
+    "optimizer": "Adam",
+    "weight_decay": 0.0
+  }
+}

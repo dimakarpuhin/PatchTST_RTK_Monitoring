@@ -1,0 +1,58 @@
+{
+  "number_of_folds": 5,
+  "number_of_experiments": 15,
+  "number_of_oof_windows": 521,
+  "global_metrics": {
+    "multiclass_accuracy": 0.6487523992322457,
+    "multiclass_balanced_accuracy": 0.47910447761194025,
+    "multiclass_macro_f1": 0.4686918582503816,
+    "multiclass_confusion_matrix": [
+      [
+        288,
+        19,
+        13
+      ],
+      [
+        39,
+        22,
+        6
+      ],
+      [
+        54,
+        52,
+        28
+      ]
+    ],
+    "binary_accuracy": 0.7600767754318618,
+    "binary_balanced_accuracy": 0.7186567164179105,
+    "binary_precision": 0.7714285714285715,
+    "binary_recall": 0.5373134328358209,
+    "binary_f1": 0.6334310850439883,
+    "binary_confusion_matrix": [
+      [
+        288,
+        32
+      ],
+      [
+        93,
+        108
+      ]
+    ]
+  },
+  "experiment_summary": {
+    "multiclass_macro_f1_mean": 0.37561240240903326,
+    "multiclass_macro_f1_std": 0.1968699271029512,
+    "binary_f1_mean": 0.520991452991453,
+    "binary_f1_std": 0.4722730681635574,
+    "binary_recall_mean": 0.5708333333333333,
+    "binary_recall_std": 0.49487702897742575
+  },
+  "training_loss": {
+    "name": "CRCE",
+    "lambda_l2": 0.0001,
+    "lambda_supcon": 0.1,
+    "temperature": 0.07,
+    "optimizer": "Adam",
+    "weight_decay": 0.0
+  }
+}
